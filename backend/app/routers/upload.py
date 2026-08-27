@@ -1,5 +1,6 @@
 import logging
 
+import logging
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
 from app.schemas.upload import DocumentQuality, UploadResponse

@@ -1,9 +1,11 @@
-"""OCR character-confusion helpers. Raw OCR is never mutated."""
+"""OCR character-confusion helpers and normalization utilities. Raw OCR is never mutated."""
 
 from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import date, datetime
+from typing import Literal
 
 CONFUSION_TO_DIGIT = str.maketrans(
     {
@@ -30,6 +32,13 @@ CONFUSION_TO_LETTER = str.maketrans(
     }
 )
 
+MONTH_MAP = {
+    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+    "JANUARY": 1, "FEBRUARY": 2, "MARCH": 3, "APRIL": 4, "JUNE": 6,
+    "JULY": 7, "AUGUST": 8, "SEPTEMBER": 9, "OCTOBER": 10, "NOVEMBER": 11, "DECEMBER": 12,
+}
+
 
 def preserve_raw(value: str | None) -> str | None:
     if value is None:
@@ -50,6 +59,8 @@ def uppercase_compact(value: str) -> str:
 
 
 def normalize_name(raw: str) -> str:
+    if not raw:
+        return ""
     cleaned = unicodedata.normalize("NFKC", raw)
     cleaned = cleaned.replace(" ,", ",").replace(", ", ", ")
     cleaned = collapse_spaces(cleaned)
@@ -96,8 +107,6 @@ def interpret_document_number(raw: str) -> str:
         if chars[index].isalpha() and index > 1:
             continue
         if chars[index].isalpha():
-            # Mixed IDs: keep letters in letter-looking positions, map obvious digit confusions
-            # when surrounded by digits.
             prev_digit = index > 0 and chars[index - 1].isdigit()
             next_digit = index + 1 < len(chars) and chars[index + 1].isdigit()
             if prev_digit or next_digit:
@@ -106,8 +115,95 @@ def interpret_document_number(raw: str) -> str:
 
 
 def mrz_sanitize_line(line: str) -> str:
+    """Clean candidate line by removing spaces and standardizing filler characters."""
+    if not line:
+        return ""
     compact = re.sub(r"\s+", "", line.upper())
+    compact = compact.replace("«", "<").replace("(", "<").replace(")", "<").replace("[", "<").replace("]", "<").replace("{", "<").replace("}", "<")
     compact = re.sub(r"[^A-Z0-9<]", "<", compact)
-    # Common OCR confusion in MRZ digit/letter fields is handled during parse,
-    # not by silently rewriting this canonical raw candidate.
     return compact
+
+
+def sanitize_mrz_field(raw: str, field_type: Literal["alpha", "numeric", "alphanumeric"]) -> str:
+    """Correct OCR character confusion strictly according to ICAO 9303 field specification."""
+    if not raw:
+        return ""
+    if field_type == "alpha":
+        return raw.translate(CONFUSION_TO_LETTER).replace("<", "")
+    if field_type == "numeric":
+        return raw.translate(CONFUSION_TO_DIGIT)
+    return raw.replace("<", "")
+
+
+def normalize_date_string(raw: str | None) -> str | None:
+    """Parse various date formats (YYYY-MM-DD, DD/MM/YYYY, DD-MMM-YYYY, YYMMDD) to ISO YYYY-MM-DD."""
+    if not raw:
+        return None
+    raw_clean = collapse_spaces(raw.strip()).upper()
+
+    # 1. ISO format: YYYY-MM-DD or YYYY.MM.DD or YYYY/MM/DD
+    match = re.search(r"\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b", raw_clean)
+    if match:
+        year, month, day = int(match.group(1)), int(match.group(2)), int(match.group(3))
+        try:
+            return date(year, month, day).isoformat()
+        except ValueError:
+            pass
+
+    # 2. DD-MM-YYYY or DD/MM/YYYY
+    match = re.search(r"\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})\b", raw_clean)
+    if match:
+        day, month, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
+        try:
+            return date(year, month, day).isoformat()
+        except ValueError:
+            pass
+
+    # 3. Textual month e.g. 06 AUG 1969 or 06-AUG-1969 or AUG 06 1969
+    for name, month_num in MONTH_MAP.items():
+        pattern = rf"\b(\d{1,2})[\s\-/.]{name}[\s\-/.]+(\d{4})\b"
+        match = re.search(pattern, raw_clean)
+        if match:
+            day, year = int(match.group(1)), int(match.group(2))
+            try:
+                return date(year, month_num, day).isoformat()
+            except ValueError:
+                pass
+
+    # 4. YYMMDD (6 digits from MRZ)
+    digits = strip_non_alnum(raw_clean)
+    if len(digits) == 6 and digits.isdigit():
+        yy, mm, dd = int(digits[:2]), int(digits[2:4]), int(digits[4:6])
+        current_yy = date.today().year % 100
+        year = 2000 + yy if yy <= (current_yy + 25) else 1900 + yy
+        try:
+            return date(year, mm, dd).isoformat()
+        except ValueError:
+            pass
+
+    return raw_clean
+
+
+def compare_date_values(date_a: str | None, date_b: str | None) -> bool:
+    """Compare two dates allowing for 2-digit vs 4-digit year differences."""
+    if not date_a or not date_b:
+        return False
+    digits_a = strip_non_alnum(date_a)
+    digits_b = strip_non_alnum(date_b)
+
+    if digits_a == digits_b:
+        return True
+
+    # If one is 8 digits (YYYYMMDD) and one is 6 digits (YYMMDD)
+    if len(digits_a) == 8 and len(digits_b) == 6:
+        return digits_a[2:] == digits_b
+    if len(digits_a) == 6 and len(digits_b) == 8:
+        return digits_b[2:] == digits_a
+
+    norm_a = normalize_date_string(date_a)
+    norm_b = normalize_date_string(date_b)
+    if norm_a and norm_b:
+        return norm_a == norm_b
+
+    return False
+

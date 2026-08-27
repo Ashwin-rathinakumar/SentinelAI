@@ -1,4 +1,4 @@
-"""Structured field extraction from OCR text. Missing values are never invented."""
+"""Structured field extraction from OCR text and MRZ. Missing values are never invented."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Any
 
 from app.services.ocr_normalize import (
     interpret_document_number,
+    normalize_date_string,
     normalize_name,
     split_person_name,
     uppercase_compact,
@@ -80,12 +81,12 @@ NOT_APPLICABLE = {
 LABELS: dict[str, list[str]] = {
     "surname": [r"surname", r"family name", r"last name", r"nom\b"],
     "given_names": [r"given names?", r"first names?", r"forenames?", r"prenom", r"pr[eé]noms?"],
-    "full_name": [r"full name", r"name of bearer", r"name\b"],
-    "passport_number": [r"passport no\.?", r"passport number", r"document no\.?", r"doc(?:ument)? no\.?"],
-    "nationality": [r"nationality", r"nationalit[eé]", r"citizenship"],
-    "date_of_birth": [r"date of birth", r"birth date", r"dob", r"date de naissance"],
-    "gender": [r"\bsex\b", r"gender", r"sexe"],
-    "date_of_issue": [r"date of issue", r"date of issuance", r"issued on", r"issue date"],
+    "full_name": [r"full name", r"name of bearer", r"name\b", r"nom et pr[eé]noms?"],
+    "passport_number": [r"passport no\.?", r"passport number", r"document no\.?", r"doc(?:ument)? no\.?", r"pass-nr\.?"],
+    "nationality": [r"nationality", r"nationalit[eé]", r"citizenship", r"staatsangehörigkeit"],
+    "date_of_birth": [r"date of birth", r"birth date", r"dob", r"date de naissance", r"geburtsdatum"],
+    "gender": [r"\bsex\b", r"gender", r"sexe", r"geschlecht"],
+    "date_of_issue": [r"date of issue", r"date of issuance", r"issued on", r"issue date", r"date de d[eé]livrance", r"ausstellungsdatum"],
     "date_of_expiry": [
         r"date of expiry",
         r"date of expiration",
@@ -93,16 +94,17 @@ LABELS: dict[str, list[str]] = {
         r"expiration date",
         r"valid until",
         r"date d['’]expiration",
+        r"g[uü]ltig bis",
     ],
-    "issuing_country": [r"issuing country", r"issuing state", r"code of issuing"],
-    "place_of_birth": [r"place of birth", r"lieu de naissance"],
+    "issuing_country": [r"issuing country", r"issuing state", r"code of issuing", r"pays [eé]metteur", r"ausstellender staat"],
+    "place_of_birth": [r"place of birth", r"lieu de naissance", r"geburtsort"],
     "visa_number": [r"visa no\.?", r"visa number", r"control number"],
     "visa_type": [r"visa type", r"class", r"category", r"type of visa"],
     "entries": [r"entries", r"number of entries"],
     "stay_duration": [r"duration of stay", r"period of stay", r"length of stay"],
     "entry_validation": [r"valid for", r"annotation", r"entry validation"],
-    "id_number": [r"id(?:entity)? (?:no|number|card no)", r"national id", r"nin", r"nic"],
-    "issuing_authority": [r"issuing authority", r"authority", r"issued by"],
+    "id_number": [r"id(?:entity)? (?:no|number|card no)", r"national id", r"nin", r"nic", r"aadhaar", r"pan no"],
+    "issuing_authority": [r"issuing authority", r"authority", r"issued by", r"autorit[eé]"],
     "licence_number": [r"licen[cs]e no\.?", r"licen[cs]e number", r"dl number", r"driver(?:'s)? no"],
     "category": [r"categor(?:y|ies)", r"class(?:es)?", r"vehicle class"],
     "permit_number": [r"permit no\.?", r"permit number", r"authorization no"],
@@ -112,9 +114,6 @@ LABELS: dict[str, list[str]] = {
     "expiry_date": [r"expiry date", r"expiration", r"valid until", r"valid to"],
 }
 
-DATE_RE = re.compile(
-    r"\b(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\b"
-)
 PASSPORT_NO_RE = re.compile(r"\b([A-Z][A-Z0-9<]{5,8}\d)\b")
 GENDER_RE = re.compile(r"\b(M|F|X|MALE|FEMALE)\b", re.I)
 
@@ -191,10 +190,7 @@ def _extract_by_labels(lines: list[str]) -> dict[str, str]:
 
 
 def _normalize_date(raw: str) -> str | None:
-    match = DATE_RE.search(raw)
-    if not match:
-        return None
-    return match.group(1)
+    return normalize_date_string(raw)
 
 
 def _normalize_gender(raw: str) -> str | None:
@@ -233,7 +229,9 @@ def _fill(
 
     if key in labeled:
         raw = labeled[key]
-        return _detected(raw, normalizer(raw))
+        norm = normalizer(raw)
+        if norm:
+            return _detected(raw, norm)
 
     if mrz and key in mrz_keys:
         mapped = _from_mrz_field(mrz, mrz_keys[key])
@@ -452,3 +450,4 @@ def _extract_permit(labeled, required, optional, not_applicable) -> dict[str, An
     fields["issuing_authority"] = _fill("issuing_authority", labeled, None, {}, required, optional, not_applicable, normalize_name)
     fields["restrictions"] = _fill("restrictions", labeled, None, {}, required, optional, not_applicable, normalize_name)
     return fields
+

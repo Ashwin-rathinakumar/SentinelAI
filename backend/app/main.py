@@ -4,9 +4,11 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from datetime import datetime, timezone
 
 from app.config import APP_DESCRIPTION, APP_NAME, APP_VERSION, CORS_ORIGINS
 from app.routers.upload import router as upload_router
+from app.routers.screening import router as screening_router
 from app.services.file_service import ensure_uploads_directory
 
 app = FastAPI(
@@ -24,6 +26,7 @@ app.add_middleware(
 )
 
 app.include_router(upload_router)
+app.include_router(screening_router)
 
 
 @app.on_event("startup")

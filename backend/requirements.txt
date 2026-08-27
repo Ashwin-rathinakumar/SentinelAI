@@ -6,3 +6,7 @@ python-multipart==0.0.20
 Pillow==11.1.0
 opencv-python-headless==4.11.0.86
 PyMuPDF==1.25.3
+rapidocr-onnxruntime==1.4.4
+onnxruntime==1.29.0
+pytest==9.1.1
+httpx==0.28.1

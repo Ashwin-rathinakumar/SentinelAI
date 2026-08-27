@@ -39,3 +39,6 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+# Runtime generated data
+backend/processed/
+backend/sessions/

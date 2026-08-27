@@ -13,13 +13,7 @@ export interface HomeResponse {
 }
 
 export type ConnectionStatus = 'checking' | 'connected' | 'disconnected'
-
-export type DocumentType =
-  | 'passport'
-  | 'visa'
-  | 'national_id'
-  | 'driving_license'
-  | 'permit'
+export type DocumentType = 'passport' | 'visa' | 'national_id' | 'driving_license' | 'permit'
 
 export interface QualityMetric {
   label: string
@@ -54,6 +48,146 @@ export interface UploadResponse {
   quality: DocumentQuality
 }
 
+export interface FieldItem {
+  raw?: string | null
+  normalized?: string | null
+  status?: string
+}
+
+export interface OCRResult {
+  status: string
+  raw_text: string
+  confidence: number | null
+  fields: Record<string, FieldItem>
+  mrz: Record<string, any> | null
+  warnings?: string[]
+}
+
+export interface MRZData {
+  format?: string
+  raw_lines?: string[]
+  mrz_detected: boolean
+  mrz_valid: boolean
+  status: string
+  checks?: Record<string, boolean>
+  mrz_errors?: string[]
+  document_code?: FieldItem
+  issuing_country?: FieldItem
+  surname?: FieldItem
+  given_names?: FieldItem
+  full_name?: FieldItem
+  passport_number?: FieldItem
+  nationality?: FieldItem
+  date_of_birth?: FieldItem
+  sex?: FieldItem
+  date_of_expiry?: FieldItem
+  optional_data?: FieldItem
+}
+
+export interface ValidationResult {
+  valid: boolean
+  status: 'VALID' | 'REVIEW' | 'INVALID'
+  reason_codes: string[]
+  messages: string[]
+  consistency: Record<string, string>
+}
+
+export interface ForensicIndicator {
+  type: string
+  severity: 'LOW' | 'MEDIUM' | 'HIGH'
+  description: string
+}
+
+export interface ForensicResult {
+  tamper_risk: 'LOW' | 'MEDIUM' | 'HIGH'
+  score: number
+  indicators: ForensicIndicator[]
+}
+
+export interface FaceResult {
+  face_detected_document: boolean
+  face_detected_selfie: boolean
+  image_quality: string
+  similarity: number | null
+  match: boolean | null
+  status: 'MATCH' | 'MISMATCH' | 'NOT_PROVIDED' | 'UNABLE_TO_VERIFY'
+  reason: string
+  document_face_crop?: string | null
+  selfie_face_crop?: string | null
+}
+
+export interface DatabaseResult {
+  found: boolean
+  status: string
+  blacklisted: boolean
+  source: string
+  note: string
+  record?: {
+    document_number?: string
+    full_name?: string
+    date_of_birth?: string
+    nationality?: string
+    date_of_expiry?: string
+    registered_status?: string
+  }
+  field_matches?: Record<string, string>
+}
+
+export interface RiskReason {
+  code: string
+  points: number
+  severity: string
+  description: string
+}
+
+export interface RiskResult {
+  risk_score: number
+  risk_level: 'LOW RISK' | 'MEDIUM RISK' | 'HIGH PRIORITY REVIEW'
+  recommendation: string
+  reasons: RiskReason[]
+}
+
+export interface OfficerDecision {
+  decision: 'APPROVE' | 'REJECT' | 'MANUAL_VERIFICATION'
+  notes?: string | null
+  officer_id: string
+  timestamp: string
+}
+
+export interface ScreeningResponse {
+  success: boolean
+  case_id: string
+  timestamp: string
+  file_id: string
+  document_type: string
+  filename: string
+  officer_id?: string
+  quality: DocumentQuality
+  ocr: OCRResult
+  mrz: MRZData
+  validation: ValidationResult
+  tamper: ForensicResult
+  face: FaceResult
+  database: DatabaseResult
+  risk: RiskResult
+  officer_decision?: OfficerDecision | null
+}
+
+export interface CaseSummary {
+  case_id: string
+  timestamp: string
+  document_type: string
+  document_number: string
+  holder_name?: string
+  validation?: string
+  risk?: {
+    risk_score: number
+    risk_level: string
+    recommendation: string
+  }
+  officer_decision?: OfficerDecision | null
+}
+
 export interface ApiErrorResponse {
   success?: boolean
   error?: string
@@ -61,5 +195,5 @@ export interface ApiErrorResponse {
 }
 
 export type UploadPhase = 'idle' | 'uploading' | 'analyzing' | 'complete' | 'error'
-
 export type ScreeningStep = 1 | 2 | 3 | 4
+
