@@ -1,0 +1,198 @@
+.upload-section {
+  animation: fadeIn 0.35s ease;
+}
+
+.upload-dropzone {
+  display: grid;
+  place-items: center;
+  gap: 0.25rem;
+  padding: 2rem 1.25rem;
+  border-radius: 16px;
+  border: 1.5px dashed rgba(96, 165, 250, 0.45);
+  background: rgba(15, 23, 42, 0.35);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+  text-align: center;
+}
+
+.upload-dropzone:hover:not(.disabled) {
+  border-color: rgba(96, 165, 250, 0.75);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.upload-dropzone.drag-active {
+  border-color: #60a5fa;
+  background: rgba(37, 99, 235, 0.14);
+  transform: scale(1.01);
+}
+
+.upload-dropzone.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.upload-dropzone-icon {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 0.35rem;
+  border-radius: 14px;
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.upload-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.upload-subtitle {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+}
+
+.upload-meta {
+  margin: 0.65rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.file-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-top: 1rem;
+  padding: 0.85rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.file-preview-image {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.file-preview-placeholder {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-content: center;
+  gap: 0.2rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: #93c5fd;
+  font-size: 0.65rem;
+  text-align: center;
+}
+
+.file-preview-details {
+  flex: 1;
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.file-preview-details strong {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-preview-details span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.file-remove-btn {
+  appearance: none;
+  border: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.upload-error {
+  margin: 0.85rem 0 0;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  font-size: 0.88rem;
+}
+
+.upload-status {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  font-size: 0.9rem;
+}
+
+.upload-submit-btn {
+  margin-top: 1rem;
+  width: 100%;
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.25);
+  transition: transform 0.15s ease;
+}
+
+.upload-submit-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.upload-submit-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

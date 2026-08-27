@@ -1,0 +1,66 @@
+.screening-page {
+  display: grid;
+  gap: 1.35rem;
+}
+
+.screening-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.next-step-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.75rem 1.15rem;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.25);
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.next-step-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.next-step-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.phase-placeholder {
+  padding: 1.35rem;
+  border-radius: 16px;
+  border: 1px dashed rgba(96, 165, 250, 0.45);
+  background: rgba(15, 23, 42, 0.35);
+  text-align: center;
+  animation: fadeIn 0.35s ease;
+}
+
+.phase-placeholder h3 {
+  margin: 0 0 0.35rem;
+  color: var(--text-primary);
+}
+
+.phase-placeholder p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
