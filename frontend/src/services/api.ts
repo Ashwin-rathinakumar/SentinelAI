@@ -5,6 +5,9 @@ import type {
   HomeResponse,
   ScreeningResponse,
   UploadResponse,
+  BlockchainAuditRecord,
+  BlockchainNetworkStatus,
+  IntegrityVerificationResult,
 } from '../types'
 
 export const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
@@ -46,6 +49,12 @@ async function multipart(path: string, formData: FormData): Promise<any> {
 }
 
 export const api = {
+  getBlockchainStatus: () => request<BlockchainNetworkStatus>('/api/blockchain/status'),
+  getAudits: (caseId: string) => request<{ records: BlockchainAuditRecord[] }>(`/api/cases/${case_encode(caseId)}/audit`),
+  anchorAudit: (caseId: string, recordType = 'SCREENING_RESULT', version?: number) =>
+    postJson<IntegrityVerificationResult>(`/api/cases/${case_encode(caseId)}/audit/anchor?record_type=${recordType}${version ? `&version=${version}` : ''}`, {}),
+  verifyAudit: (caseId: string, recordType: string, version: number) =>
+    request<IntegrityVerificationResult>(`/api/cases/${case_encode(caseId)}/audit/verify?record_type=${recordType}&version=${version}`),
   getHome: () => request<HomeResponse>('/'),
   getHealth: () => request<HealthResponse>('/health'),
   getCases: () => request<{ success: boolean; cases: CaseSummary[] }>('/api/cases'),
@@ -95,4 +104,3 @@ export const api = {
 function case_encode(id: string): string {
   return encodeURIComponent(id)
 }
-

@@ -1,6 +1,14 @@
 from pathlib import Path
+import os
+
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env", override=False)
+
+# PostgreSQL is selected by setting DATABASE_URL.  The SQLite fallback keeps the
+# existing self-contained demo and test workflow working.
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'sentinelai.db'}")
 UPLOADS_DIR = BASE_DIR / "uploads"
 PROCESSED_DIR = BASE_DIR / "processed"
 SESSIONS_DIR = BASE_DIR / "sessions"
@@ -26,6 +34,8 @@ ALLOWED_MIME_TYPES = {
 }
 
 DOCUMENT_TYPES = {
+    "aadhaar",
+    "unknown",
     "passport",
     "visa",
     "national_id",

@@ -1,8 +1,9 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   AlertCircle,
   AlertTriangle,
   ArrowRight,
+  Camera,
   CheckCircle2,
   Database,
   FileCheck,
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react'
 import { DocumentTypeSelector } from '../components/DocumentTypeSelector'
 import { QualityCheckCard } from '../components/QualityCheckCard'
+import { BlockchainAuditCard } from '../components/BlockchainAuditCard'
 import { ScreeningStepper } from '../components/ScreeningStepper'
 import { UploadDropzone } from '../components/UploadDropzone'
 import { api } from '../services/api'
@@ -25,6 +27,11 @@ import type { DocumentType, ScreeningResponse, ScreeningStep, UploadPhase } from
 import './NewScreeningPage.css'
 
 const fieldLabels: Record<string, string> = {
+  name: 'Name',
+  id_number: 'Identity Number (masked for Aadhaar)',
+  year_of_birth: 'Year of Birth',
+  visa_number: 'Visa Number',
+  expiry_date: 'Expiry Date',
   full_name: 'Full Name',
   surname: 'Surname',
   given_names: 'Given Names',
@@ -39,7 +46,7 @@ const fieldLabels: Record<string, string> = {
 }
 
 export function NewScreeningPage() {
-  const [documentType, setDocumentType] = useState<DocumentType | null>('passport')
+  const [documentType, setDocumentType] = useState<DocumentType | null>('unknown')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [selfie, setSelfie] = useState<File | null>(null)
   const [phase, setPhase] = useState<UploadPhase>('idle')
@@ -48,11 +55,71 @@ export function NewScreeningPage() {
   const [officerNotes, setOfficerNotes] = useState('')
   const [decisionSaving, setDecisionSaving] = useState(false)
   const [decisionMessage, setDecisionMessage] = useState<string | null>(null)
+
+  // Camera capture state
+  const [cameraActive, setCameraActive] = useState(false)
+  const [cameraError, setCameraError] = useState<string | null>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
   const selfieInputRef = useRef<HTMLInputElement>(null)
 
   const selected = documentType !== null
   const complete = phase === 'complete' && !!result
   const currentStep: ScreeningStep = complete ? 3 : selected ? 2 : 1
+
+  // Clean up camera on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop())
+      }
+    }
+  }, [])
+
+  const startCamera = async () => {
+    setCameraError(null)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+        audio: false,
+      })
+      streamRef.current = stream
+      setCameraActive(true)
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+      }
+    } catch (err) {
+      setCameraError('Unable to access webcam. Please check permissions or upload a file.')
+    }
+  }
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
+    }
+    setCameraActive(false)
+  }
+
+  const capturePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    canvas.width = video.videoWidth || 640
+    canvas.height = video.videoHeight || 480
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const capturedFile = new File([blob], 'camera_selfie.jpg', { type: 'image/jpeg' })
+          setSelfie(capturedFile)
+          stopCamera()
+        }
+      }, 'image/jpeg', 0.92)
+    }
+  }
 
   const handleScreen = async () => {
     if (!selectedFile || !documentType) return
@@ -93,10 +160,12 @@ export function NewScreeningPage() {
     setError(null)
     setOfficerNotes('')
     setDecisionMessage(null)
+    stopCamera()
     if (selfieInputRef.current) selfieInputRef.current.value = ''
   }
 
   const getRiskBadgeClass = (level: string) => {
+    if (level === 'CRITICAL' || level.includes('CRITICAL')) return 'risk-badge-critical'
     if (level.includes('HIGH')) return 'risk-badge-high'
     if (level.includes('MEDIUM')) return 'risk-badge-medium'
     return 'risk-badge-low'
@@ -137,34 +206,62 @@ export function NewScreeningPage() {
                   <Fingerprint size={20} className="text-accent" />
                   <div>
                     <h4>Live Selfie Biometric Verification (Optional)</h4>
-                    <p>Upload a webcam capture or portrait selfie to perform 1:1 facial biometric cross-matching.</p>
+                    <p>Upload a portrait selfie or use live camera for 1:1 ArcFace biometric matching & duplicate search.</p>
                   </div>
                 </div>
-                <div className="biometric-file-row">
-                  <input
-                    ref={selfieInputRef}
-                    type="file"
-                    accept="image/*"
-                    id="selfie-upload"
-                    className="selfie-file-input"
-                    onChange={(e) => setSelfie(e.target.files?.[0] ?? null)}
-                  />
-                  <label htmlFor="selfie-upload" className="selfie-upload-btn">
-                    {selfie ? `Selected: ${selfie.name}` : 'Browse Selfie Image…'}
-                  </label>
-                  {selfie && (
+
+                {!cameraActive ? (
+                  <div className="biometric-file-row">
+                    <input
+                      ref={selfieInputRef}
+                      type="file"
+                      accept="image/*"
+                      id="selfie-upload"
+                      className="selfie-file-input"
+                      onChange={(e) => setSelfie(e.target.files?.[0] ?? null)}
+                    />
+                    <label htmlFor="selfie-upload" className="selfie-upload-btn">
+                      {selfie ? `Selected: ${selfie.name}` : 'Upload Selfie File…'}
+                    </label>
+
                     <button
                       type="button"
-                      className="clear-btn"
-                      onClick={() => {
-                        setSelfie(null)
-                        if (selfieInputRef.current) selfieInputRef.current.value = ''
-                      }}
+                      className="selfie-upload-btn"
+                      style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+                      onClick={() => void startCamera()}
                     >
-                      Remove
+                      <Camera size={16} /> Use Live Camera
                     </button>
-                  )}
-                </div>
+
+                    {selfie && (
+                      <button
+                        type="button"
+                        className="clear-btn"
+                        onClick={() => {
+                          setSelfie(null)
+                          if (selfieInputRef.current) selfieInputRef.current.value = ''
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="camera-preview-box">
+                    <video ref={videoRef} autoPlay playsInline className="camera-video-element" />
+                    <canvas ref={canvasRef} style={{ display: 'none' }} />
+                    <div className="camera-controls-row">
+                      <button type="button" className="camera-snap-btn" onClick={capturePhoto}>
+                        <Camera size={16} style={{ display: 'inline', marginRight: '4px' }} /> Snap Selfie
+                      </button>
+                      <button type="button" className="camera-cancel-btn" onClick={stopCamera}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {cameraError && <p style={{ color: '#f87171', fontSize: '0.85rem', marginTop: '0.5rem' }}>{cameraError}</p>}
               </div>
             )}
 
@@ -177,7 +274,7 @@ export function NewScreeningPage() {
               >
                 {phase === 'analyzing' ? (
                   <>
-                    <RefreshCw size={18} className="spin-icon" /> Analyzing Document & MRZ…
+                    <RefreshCw size={18} className="spin-icon" /> Analyzing Document…
                   </>
                 ) : phase === 'uploading' ? (
                   <>
@@ -246,7 +343,7 @@ export function NewScreeningPage() {
               <div className="card-header">
                 <FileTextIcon size={20} className="card-icon" />
                 <div>
-                  <h3>Extracted Document Information</h3>
+                  <h3>{result.document?.type || result.document_type.toUpperCase()} — Identity Extraction</h3>
                   <p className="card-subtitle">Visual Inspection Zone (VIZ) OCR extraction</p>
                 </div>
                 <span className="badge-confidence">
@@ -254,7 +351,7 @@ export function NewScreeningPage() {
                 </span>
               </div>
               <div className="field-table">
-                {Object.entries(fieldLabels).map(([key, label]) => {
+                {Object.entries(fieldLabels).filter(([key]) => key in result.ocr.fields && result.ocr.fields[key]?.status !== "NOT_APPLICABLE").map(([key, label]) => {
                   const item = result.ocr.fields[key]
                   const val = item?.normalized || item?.raw
                   const status = item?.status || 'NOT_DETECTED'
@@ -280,7 +377,7 @@ export function NewScreeningPage() {
             </div>
 
             {/* MRZ & Check Digit Inspection Card */}
-            <div className="result-card">
+            {result.mrz.applicable !== false ? <div className="result-card">
               <div className="card-header">
                 <FileSearch size={20} className="card-icon" />
                 <div>
@@ -338,7 +435,16 @@ export function NewScreeningPage() {
                   ))}
                 </div>
               </div>
-            </div>
+            </div> : <div className="result-card">
+              <div className="card-header"><FileCheck size={20} /><h3>Document Verification</h3></div>
+              <div className="field-table">
+                <p>MRZ — {result.document_type === 'aadhaar' ? 'Not applicable for Aadhaar' : 'Not applicable to the supported visual extraction pipeline'}</p>
+                <p>Expiry — {result.expiry?.status.replaceAll('_', ' ')}</p>
+                {result.document_type === 'aadhaar' && <p>QR — {result.qr?.status.replaceAll('_', ' ')}</p>}
+                <p>Authenticity is not fully verified. Secondary / manual verification required.</p>
+                {result.validation.messages.map((message, i) => <p key={i}>{message}</p>)}
+              </div>
+            </div>}
           </div>
 
           {/* 4. Grid: Biometrics, Database & Forensics */}
@@ -349,7 +455,9 @@ export function NewScreeningPage() {
                 <User size={20} className="card-icon" />
                 <div>
                   <h3>Face Verification</h3>
-                  <p className="card-subtitle">1:1 Biometric Cross-Match</p>
+                  <p className="card-subtitle">
+                    1:1 Biometric ({result.face.model || 'ArcFace'}) · Threshold: {result.face.threshold ? `${Math.round(result.face.threshold * 100)}%` : '45%'}
+                  </p>
                 </div>
               </div>
 
@@ -394,7 +502,7 @@ export function NewScreeningPage() {
                   className={`status-pill ${
                     result.face.status === 'MATCH'
                       ? 'pill-pass'
-                      : result.face.status === 'MISMATCH'
+                      : result.face.status === 'MISMATCH' || result.face.status === 'FAILED'
                       ? 'pill-fail'
                       : 'pill-neutral'
                   }`}
@@ -436,7 +544,19 @@ export function NewScreeningPage() {
                 {result.database.blacklisted && (
                   <div className="blacklist-alert">
                     <ShieldAlert size={18} />
-                    <strong>WATCHLIST / INTERPOL ALERT: Subject is flagged in registry!</strong>
+                    <strong>LOCAL WATCHLIST ALERT: Subject is flagged in registry!</strong>
+                  </div>
+                )}
+
+                {result.database.duplicate_identity && (
+                  <div className="duplicate-alert">
+                    <AlertCircle size={18} />
+                    <div>
+                      <strong>DUPLICATE IDENTITY FRAUD ALERT</strong>
+                      <p style={{ margin: '2px 0 0', fontSize: '0.82rem' }}>
+                        Biometric face matches {result.database.duplicate_reason}.
+                      </p>
+                    </div>
                   </div>
                 )}
 
@@ -448,9 +568,9 @@ export function NewScreeningPage() {
                     <p>
                       <b>DB DOB:</b> <span>{result.database.record.date_of_birth}</span>
                     </p>
-                    <p>
+                    {result.expiry?.applicable && <p>
                       <b>DB Expiry:</b> <span>{result.database.record.date_of_expiry}</span>
-                    </p>
+                    </p>}
                     <p>
                       <b>DB Status:</b> <span>{result.database.record.registered_status}</span>
                     </p>
@@ -466,19 +586,19 @@ export function NewScreeningPage() {
               <div className="card-header">
                 <Shield size={20} className="card-icon" />
                 <div>
-                  <h3>Tamper & Authenticity</h3>
+                  <h3>Forensic Signals</h3>
                   <p className="card-subtitle">Forensic Image Heuristics</p>
                 </div>
                 <span
                   className={`status-pill ${
                     result.tamper.tamper_risk === 'LOW'
-                      ? 'pill-pass'
+                      ? 'pill-neutral'
                       : result.tamper.tamper_risk === 'MEDIUM'
                       ? 'pill-medium'
                       : 'pill-fail'
                   }`}
                 >
-                  {result.tamper.tamper_risk} RISK ({result.tamper.score}/100)
+                  {result.tamper.tamper_status || 'INCONCLUSIVE'}
                 </span>
               </div>
 
@@ -516,13 +636,14 @@ export function NewScreeningPage() {
               ) : (
                 <div className="no-risk-item">
                   <CheckCircle2 size={20} className="text-success" />
-                  <span>No elevated risk indicators were triggered. All checks are within nominal tolerances.</span>
+                  <span>No elevated applicable risk indicators were triggered. This does not confirm document authenticity.</span>
                 </div>
               )}
             </div>
           </div>
 
           {/* 6. Officer Decision Center */}
+          <BlockchainAuditCard caseId={result.case_id} decisionTimestamp={result.officer_decision?.timestamp} />
           <div className="result-card officer-decision-panel">
             <div className="card-header">
               <FileCheck size={22} className="card-icon text-accent" />

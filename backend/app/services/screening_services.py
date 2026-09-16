@@ -20,231 +20,191 @@ from app.schemas.screening import (
 )
 from app.services.ocr_normalize import compare_date_values, normalize_date_string, strip_non_alnum
 
-# Synthetic local verification database records for SIH presentation
-DEMO_RECORDS: dict[str, dict[str, Any]] = {
-    "L898902C": {
-        "document_number": "L898902C",
-        "full_name": "ANNA MARIA ERIKSSON",
-        "date_of_birth": "1969-08-06",
-        "nationality": "UTO",
-        "date_of_expiry": "1994-06-23",
-        "status": "EXPIRED",
-        "blacklisted": False,
-        "note": "Standard expired travel record (ICAO synthetic benchmark).",
-    },
-    "P1234567": {
-        "document_number": "P1234567",
-        "full_name": "JOHNATHAN DOE",
-        "date_of_birth": "1985-04-12",
-        "nationality": "UTO",
-        "date_of_expiry": "2030-04-12",
-        "status": "VALID",
-        "blacklisted": False,
-        "note": "Verified active synthetic traveler identity.",
-    },
-    "P12345678": {
-        "document_number": "P12345678",
-        "full_name": "JOHNATHAN DOE",
-        "date_of_birth": "1985-04-12",
-        "nationality": "UTO",
-        "date_of_expiry": "2030-04-12",
-        "status": "VALID",
-        "blacklisted": False,
-        "note": "Verified active synthetic traveler identity.",
-    },
-    "A1234567": {
-        "document_number": "A1234567",
-        "full_name": "SARAH JENKINS",
-        "date_of_birth": "1990-11-23",
-        "nationality": "UTO",
-        "date_of_expiry": "2029-11-23",
-        "status": "VALID",
-        "blacklisted": False,
-        "note": "Verified clear identity.",
-    },
-    "A12345678": {
-        "document_number": "A12345678",
-        "full_name": "MARIA GARCIA",
-        "date_of_birth": "1990-01-15",
-        "nationality": "UTO",
-        "date_of_expiry": "2030-01-15",
-        "status": "VALID",
-        "blacklisted": False,
-        "note": "Verified clear identity.",
-    },
-    "B7654321": {
-        "document_number": "B7654321",
-        "full_name": "VIKTOR KORZHOV",
-        "date_of_birth": "1978-11-20",
-        "nationality": "UTO",
-        "date_of_expiry": "2027-11-20",
-        "status": "SUSPICIOUS",
-        "blacklisted": True,
-        "note": "ALERT: Flagged on international border watch list.",
-    },
-    "E9988776": {
-        "document_number": "E9988776",
-        "full_name": "ELENA ROSTOVA",
-        "date_of_birth": "1995-09-30",
-        "nationality": "UTO",
-        "date_of_expiry": "2031-09-30",
-        "status": "VALID",
-        "blacklisted": False,
-        "note": "Verified clear identity.",
-    },
-    "C2468135": {
-        "document_number": "C2468135",
-        "full_name": "MARIA GARCIA",
-        "date_of_birth": "1982-07-30",
-        "nationality": "ESP",
-        "date_of_expiry": "2022-07-30",
 
-        "status": "EXPIRED",
-        "blacklisted": False,
-        "note": "Document expired in local registry.",
-    },
-    "D1357902": {
-        "document_number": "D1357902",
-        "full_name": "MIKHAIL VOLKOV",
-        "date_of_birth": "1975-09-18",
-        "nationality": "DEU",
-        "date_of_expiry": "2032-09-18",
-        "status": "SUSPICIOUS",
-        "blacklisted": False,
-        "note": "Flagged for manual secondary inspection.",
-    },
-    "E9876543": {
-        "document_number": "E9876543",
-        "full_name": "RAJ PATEL",
-        "date_of_birth": "1992-05-14",
-        "nationality": "IND",
-        "date_of_expiry": "2031-05-14",
-        "status": "VALID",
-        "blacklisted": False,
-        "note": "Verified identity record in South Asia registry.",
-    },
-    "M9999999": {
-        "document_number": "M9999999",
-        "full_name": "GENUINE PERSON NAME",
-        "date_of_birth": "1995-01-01",
-        "nationality": "GBR",
-        "date_of_expiry": "2030-01-01",
-        "status": "VALID",
-        "blacklisted": False,
-        "note": "Synthetic benchmark for detecting identity mismatch.",
-    },
-}
-
-
-def database_lookup(number: str | None, extracted_fields: dict[str, Any] | None = None) -> DatabaseResult:
-    """Query synthetic local registry and perform multi-field cross-validation."""
+def database_lookup(number: str | None, extracted_fields: dict[str, Any] | None = None, document_type: str | None = None) -> DatabaseResult:
+    """Query SQLite registry and perform multi-field cross-validation."""
     if not number:
         return DatabaseResult(
             found=False,
-            status="NOT_FOUND",
+            status="UNABLE_TO_CHECK",
             blacklisted=False,
             note="No document number was available for database query.",
         )
 
+    from app.database import SessionLocal
+    from app.models import Document, Person, Watchlist
+
     key = strip_non_alnum(number).upper()
-    record = DEMO_RECORDS.get(key)
-    if not record:
+    db = SessionLocal()
+    try:
+        from sqlalchemy import func
+        keys = [key]
+        if document_type == "aadhaar":
+            import hashlib
+            keys.append("SHA256" + hashlib.sha256(key.encode()).hexdigest().upper())
+        query = db.query(Document).filter(func.replace(Document.document_number, " ", "").in_(keys))
+        if document_type:
+            query = query.filter(func.lower(Document.document_type) == document_type.lower())
+        doc = query.first()
+        if not doc:
+            hit = db.query(Watchlist).filter(Watchlist.active == True,
+                func.replace(Watchlist.document_number, " ", "").in_(keys)).first()
+            if hit:
+                return DatabaseResult(found=False, status="BLACKLISTED", blacklisted=True,
+                                      note="Document identifier appears on the local watchlist.")
+            return DatabaseResult(
+                found=False,
+                status="NOT_FOUND",
+                blacklisted=False,
+                note="Document number was not found in the verification database.",
+            )
+
+        person = db.query(Person).filter(Person.id == doc.person_id).first()
+        if not person:
+            return DatabaseResult(
+                found=True,
+                status="FOUND",
+                blacklisted=False,
+                note="Document found but person record is missing.",
+            )
+
+        # Check watchlist by document number OR person_id
+        watchlist_entry = db.query(Watchlist).filter(
+            Watchlist.active == True,  # noqa: E712
+            (func.replace(Watchlist.document_number, " ", "").in_(keys)) | (Watchlist.person_id == person.id),
+        ).first()
+
+        is_blacklisted = watchlist_entry is not None
+
+        # Build the record dict for response (same shape as before)
+        record = {
+            "document_number": doc.document_number,
+            "full_name": person.full_name,
+            "date_of_birth": person.date_of_birth or "",
+            "nationality": person.nationality or "",
+            "date_of_expiry": doc.expiry_date or "",
+            "registered_status": doc.status,
+        }
+
+        if doc.document_type.lower() == "aadhaar":
+            from app.services.aadhaar_service import mask_numbers
+            record = mask_numbers(record)
+
+        # Multi-field cross-validation
+        field_matches: dict[str, str] = {"document_number": "MATCH"}
+        is_mismatch = False
+
+        if extracted_fields:
+            # 1. Compare Full Name / Surname
+            extracted_name = (
+                (extracted_fields.get("full_name") or {}).get("normalized")
+                or (extracted_fields.get("name") or {}).get("normalized")
+                or ""
+            )
+            if extracted_name:
+                rec_name = person.full_name.upper()
+                ext_clean = strip_non_alnum(extracted_name).upper()
+                rec_clean = strip_non_alnum(rec_name)
+                if ext_clean == rec_clean or all(
+                    part in ext_clean for part in rec_name.split() if len(part) > 2
+                ):
+                    field_matches["full_name"] = "MATCH"
+                else:
+                    field_matches["full_name"] = "MISMATCH"
+                    is_mismatch = True
+
+            # 2. Compare Date of Birth
+            extracted_dob = (extracted_fields.get("date_of_birth") or {}).get("normalized")
+            if extracted_dob and person.date_of_birth:
+                if compare_date_values(extracted_dob, person.date_of_birth):
+                    field_matches["date_of_birth"] = "MATCH"
+                else:
+                    field_matches["date_of_birth"] = "MISMATCH"
+                    is_mismatch = True
+
+            # 3. Compare Nationality
+            extracted_nat = (extracted_fields.get("nationality") or {}).get("normalized")
+            if extracted_nat and person.nationality:
+                clean_ext_nat = strip_non_alnum(extracted_nat).upper()
+                clean_rec_nat = strip_non_alnum(person.nationality).upper()
+                if clean_ext_nat == clean_rec_nat:
+                    field_matches["nationality"] = "MATCH"
+                else:
+                    field_matches["nationality"] = "MISMATCH"
+                    is_mismatch = True
+
+            # 4. Compare Date of Expiry
+            extracted_exp = (extracted_fields.get("date_of_expiry") or {}).get("normalized")
+            if extracted_exp and doc.expiry_date:
+                if compare_date_values(extracted_exp, doc.expiry_date):
+                    field_matches["date_of_expiry"] = "MATCH"
+                else:
+                    field_matches["date_of_expiry"] = "MISMATCH"
+                    is_mismatch = True
+
+        # Determine status string
+        status_str = "MATCH"
+        if is_mismatch:
+            status_str = "MISMATCH"
+        elif is_blacklisted:
+            status_str = "BLACKLISTED"
+        elif doc.status == "EXPIRED":
+            status_str = "EXPIRED"
+        elif doc.status == "SUSPICIOUS":
+            status_str = "SUSPICIOUS"
+        else:
+            status_str = "FOUND"
+
+        watchlist_info = None
+        if watchlist_entry:
+            watchlist_info = {
+                "matched": True,
+                "reason": watchlist_entry.reason,
+                "severity": watchlist_entry.severity,
+            }
+
         return DatabaseResult(
-            found=False,
-            status="NOT_FOUND",
-            blacklisted=False,
-            note="Document number was not found in synthetic demo database.",
+            found=True,
+            status=status_str,
+            blacklisted=is_blacklisted,
+            source="SENTINELAI VERIFICATION DATABASE",
+            note=doc.note or "Database record lookup complete.",
+            record=record,
+            field_matches=field_matches,
         )
-
-    field_matches: dict[str, str] = {"document_number": "MATCH"}
-    is_mismatch = False
-
-    if extracted_fields:
-        # 1. Compare Full Name / Surname
-        extracted_name = (
-            (extracted_fields.get("full_name") or {}).get("normalized")
-            or (extracted_fields.get("name") or {}).get("normalized")
-            or ""
-        )
-        if extracted_name:
-            rec_name = record["full_name"].upper()
-            ext_clean = strip_non_alnum(extracted_name).upper()
-            rec_clean = strip_non_alnum(rec_name)
-            # Check overlap or match
-            if ext_clean == rec_clean or all(
-                part in ext_clean for part in rec_name.split() if len(part) > 2
-            ):
-                field_matches["full_name"] = "MATCH"
-            else:
-                field_matches["full_name"] = "MISMATCH"
-                is_mismatch = True
-
-        # 2. Compare Date of Birth
-        extracted_dob = (extracted_fields.get("date_of_birth") or {}).get("normalized")
-        if extracted_dob:
-            if compare_date_values(extracted_dob, record["date_of_birth"]):
-                field_matches["date_of_birth"] = "MATCH"
-            else:
-                field_matches["date_of_birth"] = "MISMATCH"
-                is_mismatch = True
-
-        # 3. Compare Nationality
-        extracted_nat = (extracted_fields.get("nationality") or {}).get("normalized")
-        if extracted_nat:
-            clean_ext_nat = strip_non_alnum(extracted_nat).upper()
-            clean_rec_nat = strip_non_alnum(record["nationality"]).upper()
-            if clean_ext_nat == clean_rec_nat:
-                field_matches["nationality"] = "MATCH"
-            else:
-                field_matches["nationality"] = "MISMATCH"
-                is_mismatch = True
-
-        # 4. Compare Date of Expiry
-        extracted_exp = (extracted_fields.get("date_of_expiry") or {}).get("normalized")
-        if extracted_exp:
-            if compare_date_values(extracted_exp, record["date_of_expiry"]):
-                field_matches["date_of_expiry"] = "MATCH"
-            else:
-                field_matches["date_of_expiry"] = "MISMATCH"
-                is_mismatch = True
-
-    status_str = "MATCH"
-    if is_mismatch:
-        status_str = "MISMATCH"
-    elif record.get("blacklisted"):
-        status_str = "BLACKLISTED"
-    elif record.get("status") == "EXPIRED":
-        status_str = "EXPIRED"
-    elif record.get("status") == "SUSPICIOUS":
-        status_str = "SUSPICIOUS"
-    else:
-        status_str = "FOUND"
-
-    return DatabaseResult(
-        found=True,
-        status=status_str,
-        blacklisted=bool(record.get("blacklisted")),
-        source="SIMULATED DEMO DATABASE",
-        note=record.get("note", "Synthetic record lookup complete."),
-        record={
-            "document_number": record["document_number"],
-            "full_name": record["full_name"],
-            "date_of_birth": record["date_of_birth"],
-            "nationality": record["nationality"],
-            "date_of_expiry": record["date_of_expiry"],
-            "registered_status": record["status"],
-        },
-        field_matches=field_matches,
-    )
+    finally:
+        db.close()
 
 
-def validate_document(fields: dict[str, Any], mrz: dict[str, Any]) -> ValidationResult:
+
+def validate_document(fields: dict[str, Any], mrz: dict[str, Any], document_type: str = "passport") -> ValidationResult:
     """Consolidated document validation layer."""
     codes: list[str] = []
     messages: list[str] = []
     consistency: dict[str, str] = {}
 
     # 1. Required Fields Check
+    document_type = document_type.lower()
+    if document_type != "passport":
+        required = {"aadhaar": ("full_name", "id_number"), "visa": ("name", "visa_number"),
+                    "national_id": ("name", "id_number")}.get(document_type, ())
+        for key in required:
+            if not (fields.get(key) or {}).get("normalized"):
+                codes.append("MISSING_REQUIRED_FIELD")
+                messages.append(f"Required field {key} was not extracted.")
+        if document_type == "aadhaar":
+            identifier = (fields.get("id_number") or {}).get("normalized")
+            if identifier and not re.fullmatch(r"\d{12}", identifier):
+                codes.append("INVALID_DOCUMENT_NUMBER")
+                messages.append("Aadhaar identifier must contain 12 digits.")
+        if document_type == "visa":
+            expiry = (fields.get("expiry_date") or {}).get("normalized")
+            if expiry and expiry < date.today().isoformat():
+                codes.append("DOCUMENT_EXPIRED")
+                messages.append("Visa has expired.")
+        codes.append("AUTHENTICITY_NOT_VERIFIED" if document_type != "unknown" else "UNKNOWN_DOCUMENT")
+        messages.append("Secondary / manual verification required; issuer authenticity is not verified.")
+        return ValidationResult(valid=False, status="REVIEW", reason_codes=list(dict.fromkeys(codes)), messages=messages)
     required_keys = ("full_name", "passport_number", "date_of_expiry")
     for key in required_keys:
         item = fields.get(key) or {}
@@ -299,6 +259,21 @@ def validate_document(fields: dict[str, Any], mrz: dict[str, Any]) -> Validation
                 messages.append(f"Expiry date mismatch: OCR ({ocr_exp}) vs MRZ ({mrz_exp}).")
         else:
             consistency["date_of_expiry"] = "UNAVAILABLE"
+
+        # Compare Full Name
+        ocr_name = (fields.get("full_name") or {}).get("normalized") or (fields.get("surname") or {}).get("normalized")
+        mrz_name = (mrz.get("full_name") or {}).get("normalized") or (mrz.get("surname") or {}).get("normalized") if isinstance(mrz.get("full_name"), dict) or isinstance(mrz.get("surname"), dict) else None
+        if ocr_name and mrz_name:
+            c_ocr_name = strip_non_alnum(str(ocr_name)).upper()
+            c_mrz_name = strip_non_alnum(str(mrz_name)).upper()
+            if c_ocr_name == c_mrz_name or c_ocr_name in c_mrz_name or c_mrz_name in c_ocr_name or all(part in c_ocr_name for part in c_mrz_name.split() if len(part) > 2):
+                consistency["full_name"] = "MATCH"
+            else:
+                consistency["full_name"] = "MISMATCH"
+                codes.append("OCR_MRZ_MISMATCH")
+                messages.append(f"Name mismatch: OCR ({ocr_name}) vs MRZ ({mrz_name}).")
+        else:
+            consistency["full_name"] = "UNAVAILABLE"
 
         # Compare Nationality
         ocr_nat = (fields.get("nationality") or {}).get("normalized")
@@ -378,10 +353,10 @@ def validate_document(fields: dict[str, Any], mrz: dict[str, Any]) -> Validation
 def forensic_analysis(data: bytes, quality: dict[str, Any], validation: ValidationResult) -> ForensicResult:
     """Forensic and tamper indicators analysis."""
     indicators: list[Indicator] = []
-    score = 0
+
 
     if "OCR_MRZ_MISMATCH" in validation.reason_codes:
-        score += 30
+
         indicators.append(
             Indicator(
                 type="OCR_MRZ_MISMATCH",
@@ -391,7 +366,7 @@ def forensic_analysis(data: bytes, quality: dict[str, Any], validation: Validati
         )
 
     if "MRZ_CHECK_FAILED" in validation.reason_codes:
-        score += 25
+
         indicators.append(
             Indicator(
                 type="MRZ_CHECK_FAILED",
@@ -401,12 +376,12 @@ def forensic_analysis(data: bytes, quality: dict[str, Any], validation: Validati
         )
 
     if quality.get("ocr_readiness", 0) < 45:
-        score += 15
+
         indicators.append(
             Indicator(
                 type="IMAGE_QUALITY",
                 severity="MEDIUM",
-                description="Degraded image quality may obscure tampering or physical alteration.",
+                description="Degraded image quality reduces readability; this does not establish tampering.",
             )
         )
 
@@ -414,7 +389,7 @@ def forensic_analysis(data: bytes, quality: dict[str, Any], validation: Validati
         image = Image.open(io.BytesIO(data)).convert("RGB")
         arr = np.asarray(image, dtype=np.float32)
 
-        # 1. Error Level Analysis (ELA) simulation: compression artifact discrepancy
+        # 1. Resave error heuristic; neither authenticity verification nor ML confidence
         buffer = io.BytesIO()
         image.save(buffer, "JPEG", quality=75)
         buffer.seek(0)
@@ -423,12 +398,12 @@ def forensic_analysis(data: bytes, quality: dict[str, Any], validation: Validati
         diff_arr = np.asarray(diff, dtype=np.float32)
         ela_score = float(diff_arr.mean())
         if ela_score > 12.0:
-            score += 15
+
             indicators.append(
                 Indicator(
                     type="COMPRESSION_DISCREPANCY",
                     severity="MEDIUM",
-                    description="Elevated resave error level detected, suggesting possible digital modification.",
+                    description="Elevated resave error; compression or image detail can cause this. Content tampering is not established.",
                 )
             )
 
@@ -436,7 +411,7 @@ def forensic_analysis(data: bytes, quality: dict[str, Any], validation: Validati
         gray = np.asarray(image.convert("L"), dtype=np.float32)
         edges = np.abs(np.diff(gray, axis=1)).mean() if gray.shape[1] > 1 else 0
         if edges > 45:
-            score += 10
+
             indicators.append(
                 Indicator(
                     type="EDGE_ANOMALY",
@@ -445,18 +420,18 @@ def forensic_analysis(data: bytes, quality: dict[str, Any], validation: Validati
                 )
             )
         elif float(arr.std()) < 15:
-            score += 8
+
             indicators.append(
                 Indicator(
                     type="LOW_VARIATION",
                     severity="LOW",
-                    description="Image exhibits unusually uniform pixel distribution; verify capture authenticity.",
+                    description="Image has low pixel variation; capture quality may limit analysis.",
                 )
             )
 
         # 3. Metadata analysis
         if image.info and ("Software" in image.info or "Adobe" in str(image.info)):
-            score += 8
+
             indicators.append(
                 Indicator(
                     type="METADATA_EDIT_HISTORY",
@@ -477,136 +452,42 @@ def forensic_analysis(data: bytes, quality: dict[str, Any], validation: Validati
             )
         )
 
-    tamper_level: Any = "HIGH" if score >= 40 else "MEDIUM" if score >= 15 else "LOW"
     return ForensicResult(
-        tamper_risk=tamper_level,
-        score=min(score, 100),
+        tamper_risk="LOW",
+        recompression_detected=any(i.type == "COMPRESSION_DISCREPANCY" for i in indicators),
+        metadata_anomaly=any(i.type == "METADATA_EDIT_HISTORY" for i in indicators),
+        score=0,
         indicators=indicators,
     )
 
 
-def _detect_and_crop_face(image_bgr: np.ndarray) -> tuple[np.ndarray | None, str | None]:
-    """Detect primary face in BGR image and return cropped 128x128 face and base64 data URL."""
-    try:
-        gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        face_cascade = cv2.CascadeClassifier(cascade_path)
-        faces = face_cascade.detectMultiScale(
-            gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40)
-        )
-
-        if len(faces) == 0:
-            # Fallback: try alt tree if available or center-upper crop
-            h, w = image_bgr.shape[:2]
-            # If standard document layout (portrait usually in left third or right third)
-            return None, None
-
-        # Pick largest face
-        largest_face = max(faces, key=lambda r: r[2] * r[3])
-        x, y, fw, fh = largest_face
-
-        # Add 15% margin
-        margin_x = int(fw * 0.15)
-        margin_y = int(fh * 0.15)
-        h, w = image_bgr.shape[:2]
-        x1 = max(0, x - margin_x)
-        y1 = max(0, y - margin_y)
-        x2 = min(w, x + fw + margin_x)
-        y2 = min(h, y + fh + margin_y)
-
-        crop = image_bgr[y1:y2, x1:x2]
-        crop_resized = cv2.resize(crop, (128, 128))
-
-        # Encode to base64 JPEG
-        _, enc = cv2.imencode(".jpg", crop_resized, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-        b64 = f"data:image/jpeg;base64,{base64.b64encode(enc.tobytes()).decode('utf-8')}"
-        return crop_resized, b64
-    except Exception:
-        return None, None
-
-
 def compare_faces(document_data: bytes, selfie_data: bytes | None) -> FaceResult:
-    """1:1 Biometric Face Verification between document photo and live selfie."""
-    # Attempt to load document image
-    try:
-        doc_img = Image.open(io.BytesIO(document_data)).convert("RGB")
-        doc_bgr = cv2.cvtColor(np.asarray(doc_img), cv2.COLOR_RGB2BGR)
-        doc_crop, doc_b64 = _detect_and_crop_face(doc_bgr)
-    except Exception:
-        doc_crop, doc_b64 = None, None
+    """1:1 Biometric Face Verification — delegates to face_service (InsightFace/ArcFace)."""
+    from app.services.face_service import verify_faces
+    return verify_faces(document_data, selfie_data)
 
-    if not selfie_data:
-        return FaceResult(
-            face_detected_document=doc_crop is not None,
-            face_detected_selfie=False,
-            image_quality="NOT_PROVIDED",
-            similarity=None,
-            match=None,
-            status="NOT_PROVIDED",
-            reason="No live selfie supplied; 1:1 facial verification was skipped.",
-            document_face_crop=doc_b64,
-            selfie_face_crop=None,
-        )
 
-    try:
-        selfie_img = Image.open(io.BytesIO(selfie_data)).convert("RGB")
-        selfie_bgr = cv2.cvtColor(np.asarray(selfie_img), cv2.COLOR_RGB2BGR)
-        selfie_crop, selfie_b64 = _detect_and_crop_face(selfie_bgr)
-
-        # If selfie crop failed via cascade, use normalized resized selfie image directly
-        if selfie_crop is None:
-            selfie_crop = cv2.resize(selfie_bgr, (128, 128))
-            _, enc = cv2.imencode(".jpg", selfie_crop, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-            selfie_b64 = f"data:image/jpeg;base64,{base64.b64encode(enc.tobytes()).decode('utf-8')}"
-
-        if doc_crop is None:
-            # Fallback document photo region (typically left 40% of standard passport)
-            dh, dw = doc_bgr.shape[:2]
-            doc_crop = cv2.resize(doc_bgr[int(dh * 0.15) : int(dh * 0.85), 0 : int(dw * 0.45)], (128, 128))
-            _, enc = cv2.imencode(".jpg", doc_crop, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-            doc_b64 = f"data:image/jpeg;base64,{base64.b64encode(enc.tobytes()).decode('utf-8')}"
-
-        # Convert both to normalized grayscale for feature comparison
-        doc_gray = cv2.cvtColor(doc_crop, cv2.COLOR_BGR2GRAY).astype(np.float32)
-        selfie_gray = cv2.cvtColor(selfie_crop, cv2.COLOR_BGR2GRAY).astype(np.float32)
-
-        # Feature 1: Normalized Pearson correlation
-        if doc_gray.std() > 0 and selfie_gray.std() > 0:
-            corr = float(np.corrcoef(doc_gray.flatten(), selfie_gray.flatten())[0, 1])
-            norm_corr = max(0.0, min(1.0, (corr + 1) / 2))
-        else:
-            norm_corr = 0.5
-
-        # Feature 2: Histogram intersection on equalized facial luminance
-        hist_doc = cv2.calcHist([doc_crop], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
-        hist_selfie = cv2.calcHist([selfie_crop], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
-        cv2.normalize(hist_doc, hist_doc)
-        cv2.normalize(hist_selfie, hist_selfie)
-        hist_sim = float(cv2.compareHist(hist_doc, hist_selfie, cv2.HISTCMP_CORREL))
-        norm_hist = max(0.0, min(1.0, (hist_sim + 1) / 2))
-
-        # Combined similarity score
-        similarity = round(0.6 * norm_corr + 0.4 * norm_hist, 3)
-        match = similarity >= 0.70
-
-        return FaceResult(
-            face_detected_document=True,
-            face_detected_selfie=True,
-            image_quality="BIOMETRIC_FEATURE_MATCH",
-            similarity=similarity,
-            match=match,
-            status="MATCH" if match else "MISMATCH",
-            reason=f"1:1 face similarity score: {int(similarity * 100)}% (Threshold: 70%).",
-            document_face_crop=doc_b64,
-            selfie_face_crop=selfie_b64,
-        )
-    except Exception as exc:
-        return FaceResult(
-            status="UNABLE_TO_VERIFY",
-            reason=f"Face verification could not be completed: {exc}",
-            document_face_crop=doc_b64,
-            selfie_face_crop=None,
-        )
+# ---------------------------------------------------------------------------
+# Configurable risk weights (points added per signal)
+# ---------------------------------------------------------------------------
+RISK_WEIGHTS: dict[str, int] = {
+    "WATCHLIST_MATCH": 35,
+    "DATABASE_MISMATCH": 25,
+    "DATABASE_FLAGGED": 20,
+    "MRZ_MISSING": 20,
+    "MRZ_CHECK_FAILED": 25,
+    "OCR_MRZ_CONFLICT": 25,
+    "DOCUMENT_EXPIRED": 15,
+    "INVALID_DATES": 15,
+    "FACE_MISMATCH": 25,
+    "FACE_FAILED": 15,
+    "TAMPER_HIGH": 25,
+    "TAMPER_MEDIUM": 15,
+    "LOW_OCR_CONFIDENCE": 10,
+    "MISSING_FIELDS": 15,
+    "POOR_QUALITY": 10,
+    "DUPLICATE_IDENTITY": 35,
+}
 
 
 def calculate_risk(
@@ -618,15 +499,24 @@ def calculate_risk(
     face: FaceResult,
     database: DatabaseResult,
 ) -> RiskResult:
-    """Explainable 0-100 Risk Engine with explicit weighted score breakdown."""
+    """Explainable 0-100 Risk Engine with explicit weighted score breakdown.
+
+    Risk Levels:
+        0–29   → LOW RISK
+        30–59  → MEDIUM RISK
+        60–79  → HIGH PRIORITY REVIEW
+        80–100 → CRITICAL
+    """
     score = 0
     reasons: list[dict[str, Any]] = []
 
-    def add_reason(points: int, code: str, desc: str, severity: str = "MEDIUM"):
+    def add_reason(code: str, desc: str, severity: str = "MEDIUM"):
         nonlocal score
+        points = RISK_WEIGHTS.get(code, 10)
         score += points
         reasons.append({
             "code": code,
+            "applicable": True,
             "points": points,
             "severity": severity,
             "description": desc,
@@ -634,55 +524,75 @@ def calculate_risk(
 
     # 1. Critical Watchlist & Database Flag
     if database.blacklisted:
-        add_reason(35, "WATCHLIST_MATCH", "Identity is flagged on the immigration watchlist / blacklist.", "HIGH")
+        add_reason("WATCHLIST_MATCH", "Identity is flagged on the immigration watchlist / blacklist.", "HIGH")
     elif database.status == "MISMATCH":
-        add_reason(25, "DATABASE_MISMATCH", "Identity details conflict with registry records.", "HIGH")
+        add_reason("DATABASE_MISMATCH", "Identity details conflict with registry records.", "HIGH")
     elif database.status == "SUSPICIOUS":
-        add_reason(20, "DATABASE_FLAGGED", "Registry record marked as suspicious.", "HIGH")
+        add_reason("DATABASE_FLAGGED", "Registry record marked as suspicious.", "HIGH")
 
-    # 2. MRZ Integrity
-    if not mrz.get("mrz_detected"):
-        add_reason(20, "MRZ_MISSING", "Document machine-readable zone was not detected.", "MEDIUM")
-    elif not mrz.get("mrz_valid"):
-        add_reason(25, "MRZ_CHECK_FAILED", "ICAO machine-readable zone check-digit calculation failed.", "HIGH")
+    # 2. Duplicate Identity Detection
+    if database.duplicate_identity:
+        dup_name = database.duplicate_reason or "another registered individual"
+        add_reason("DUPLICATE_IDENTITY",
+                   f"Face matches {dup_name} — possible multiple identity fraud.", "HIGH")
 
-    # 3. OCR vs MRZ Consistency
-    if "OCR_MRZ_MISMATCH" in validation.reason_codes:
-        add_reason(25, "OCR_MRZ_CONFLICT", "Conflict detected between visual zone text and MRZ data.", "HIGH")
+    document_type = (ocr.get("document") or {}).get("type", "PASSPORT").lower()
+    mrz_applicable = document_type == "passport" and mrz.get("applicable", True)
+    expiry_applicable = document_type in {"passport", "visa"}
 
-    # 4. Document Expiration & Date Sequences
-    if "DOCUMENT_EXPIRED" in validation.reason_codes or database.status == "EXPIRED":
-        add_reason(15, "DOCUMENT_EXPIRED", "Document has expired and is no longer valid for travel.", "MEDIUM")
-    if "INVALID_DATE_SEQUENCE" in validation.reason_codes:
-        add_reason(15, "INVALID_DATES", "Chronological contradiction detected in issue/expiry dates.", "MEDIUM")
+    # 3. MRZ Integrity
+    if mrz_applicable and not mrz.get("mrz_detected"):
+        add_reason("MRZ_MISSING", "Document machine-readable zone was not detected.", "MEDIUM")
+    elif mrz_applicable and not mrz.get("mrz_valid"):
+        add_reason("MRZ_CHECK_FAILED", "ICAO machine-readable zone check-digit calculation failed.", "HIGH")
 
-    # 5. Biometric Face Verification
+    # 4. OCR vs MRZ Consistency
+    if mrz_applicable and "OCR_MRZ_MISMATCH" in validation.reason_codes:
+        add_reason("OCR_MRZ_CONFLICT", "Conflict detected between visual zone text and MRZ data.", "HIGH")
+
+    # 5. Document Expiration & Date Sequences
+    if expiry_applicable and ("DOCUMENT_EXPIRED" in validation.reason_codes or database.status == "EXPIRED"):
+        add_reason("DOCUMENT_EXPIRED", "Document has expired and is no longer valid for travel.", "MEDIUM")
+    if expiry_applicable and "INVALID_DATE_SEQUENCE" in validation.reason_codes:
+        add_reason("INVALID_DATES", "Chronological contradiction detected in issue/expiry dates.", "MEDIUM")
+
+    # 6. Biometric Face Verification
     if face.match is False:
-        add_reason(25, "FACE_MISMATCH", f"Live selfie facial similarity ({int((face.similarity or 0) * 100)}%) is below verification threshold.", "HIGH")
+        sim_pct = int((face.similarity or 0) * 100)
+        add_reason("FACE_MISMATCH",
+                   f"Live selfie facial similarity ({sim_pct}%) is below verification threshold.", "HIGH")
+    elif face.status == "FAILED":
+        add_reason("FACE_FAILED",
+                   f"Face verification failed: {face.reason}", "MEDIUM")
 
-    # 6. Forensic & Tampering
-    if tamper.tamper_risk == "HIGH":
-        add_reason(25, "TAMPER_HIGH", "Forensic analysis detected strong indicators of image tampering or manipulation.", "HIGH")
-    elif tamper.tamper_risk == "MEDIUM":
-        add_reason(15, "TAMPER_MEDIUM", "Forensic analysis identified review-worthy visual anomalies.", "MEDIUM")
+    # 7. Forensic & Tampering
+    if tamper.content_tamper_detected and tamper.tamper_risk == "HIGH":
+        add_reason("TAMPER_HIGH", "Forensic analysis detected strong indicators of image tampering.", "HIGH")
+    elif tamper.content_tamper_detected and tamper.tamper_risk == "MEDIUM":
+        add_reason("TAMPER_MEDIUM", "Forensic analysis identified review-worthy visual anomalies.", "MEDIUM")
 
-    # 7. OCR Confidence & Missing Required Fields
+    # 8. OCR Confidence & Missing Required Fields
     conf = ocr.get("confidence")
     if conf is not None and conf < 60:
-        add_reason(10, "LOW_OCR_CONFIDENCE", f"OCR extraction confidence ({conf}%) is below optimal threshold.", "LOW")
+        add_reason("LOW_OCR_CONFIDENCE",
+                   f"OCR extraction confidence ({conf}%) is below optimal threshold.", "LOW")
     if "MISSING_REQUIRED_FIELD" in validation.reason_codes:
-        add_reason(15, "MISSING_FIELDS", "One or more mandatory identity fields could not be extracted.", "MEDIUM")
+        add_reason("MISSING_FIELDS", "One or more mandatory identity fields could not be extracted.", "MEDIUM")
 
-    # 8. Image Quality Readiness
+    # 9. Image Quality Readiness
     if quality.get("ocr_readiness", 100) < 50:
-        add_reason(10, "POOR_QUALITY", "Capture quality (resolution/blur/lighting) is below recommended standard.", "LOW")
+        add_reason("POOR_QUALITY",
+                   "Capture quality (resolution/blur/lighting) is below recommended standard.", "LOW")
 
     total_score = min(score, 100)
 
     # Determine Risk Level Category
-    if total_score >= 60 or database.blacklisted:
-        risk_level: Any = "HIGH PRIORITY REVIEW"
-        recommendation = "REJECT_OR_INTERCEPT" if database.blacklisted else "SECONDARY_INSPECTION"
+    if total_score >= 80 or database.blacklisted:
+        risk_level: Any = "CRITICAL"
+        recommendation = "REJECT_OR_INTERCEPT" if database.blacklisted else "IMMEDIATE_REVIEW"
+    elif total_score >= 60:
+        risk_level = "HIGH PRIORITY REVIEW"
+        recommendation = "SECONDARY_INSPECTION"
     elif total_score >= 30:
         risk_level = "MEDIUM RISK"
         recommendation = "SECONDARY_INSPECTION"
@@ -690,7 +600,14 @@ def calculate_risk(
         risk_level = "LOW RISK"
         recommendation = "PROCEED_WITH_OFFICER_REVIEW"
 
+    if document_type != "passport" and total_score < 60 and not database.blacklisted:
+        recommendation = "SECONDARY_MANUAL_VERIFICATION"
+    checks = [{"signal": code, "applicable": applicable,
+               "points": sum(r["points"] for r in reasons if r["code"] == code)}
+              for code, applicable in [("MRZ_MISSING", mrz_applicable), ("MRZ_CHECK_FAILED", mrz_applicable),
+                  ("OCR_MRZ_CONFLICT", mrz_applicable), ("DOCUMENT_EXPIRED", expiry_applicable)]]
     return RiskResult(
+        checks=checks,
         risk_score=total_score,
         risk_level=risk_level,
         recommendation=recommendation,

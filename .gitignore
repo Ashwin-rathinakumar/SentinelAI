@@ -42,3 +42,12 @@ Thumbs.db
 # Runtime generated data
 backend/processed/
 backend/sessions/
+# Local audit secrets, chain artifacts and development evidence
+**/.env.*
+!**/.env.example
+blockchain/artifacts/
+blockchain/cache/
+blockchain/deployments/
+backend/audit_demo/
+*.db-shm
+*.db-wal

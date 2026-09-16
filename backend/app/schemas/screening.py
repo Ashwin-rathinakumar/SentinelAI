@@ -3,6 +3,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 class OCRResult(BaseModel):
+    status: str = "FAILED"
     raw_text: str = ""
     confidence: float | None = 0.0
     fields: dict[str, Any] = Field(default_factory=dict)
@@ -41,6 +42,11 @@ class Indicator(BaseModel):
     description: str
 
 class ForensicResult(BaseModel):
+    recompression_detected: bool = False
+    metadata_anomaly: bool = False
+    content_tamper_detected: bool = False
+    tamper_status: str = "INCONCLUSIVE"
+    evidence_type: str = "FORENSIC_SIGNAL"
     tamper_risk: Literal['LOW', 'MEDIUM', 'HIGH']
     score: int = Field(ge=0, le=100)
     indicators: list[Indicator] = Field(default_factory=list)
@@ -55,19 +61,25 @@ class FaceResult(BaseModel):
     reason: str = 'No selfie supplied; face verification was not run.'
     document_face_crop: str | None = None
     selfie_face_crop: str | None = None
+    model: str = 'unknown'
+    threshold: float | None = None
 
 class DatabaseResult(BaseModel):
     found: bool = False
     status: str = 'NOT_FOUND'
     blacklisted: bool = False
-    source: str = 'SIMULATED DEMO DATABASE'
-    note: str = 'Synthetic records only; not a government database.'
+    source: str = 'SENTINELAI VERIFICATION DATABASE'
+    note: str = 'Verification database query complete.'
     record: dict[str, Any] | None = None
     field_matches: dict[str, str] = Field(default_factory=dict)
+    duplicate_identity: bool = False
+    matched_person_id: int | None = None
+    duplicate_reason: str | None = None
 
 class RiskResult(BaseModel):
+    checks: list[dict[str, Any]] = Field(default_factory=list)
     risk_score: int = Field(ge=0, le=100)
-    risk_level: Literal['LOW RISK', 'MEDIUM RISK', 'HIGH PRIORITY REVIEW']
+    risk_level: Literal['LOW RISK', 'MEDIUM RISK', 'HIGH PRIORITY REVIEW', 'CRITICAL']
     recommendation: str
     reasons: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -83,11 +95,15 @@ class OfficerDecision(BaseModel):
     timestamp: str
 
 class ScreeningResponse(BaseModel):
+    blockchain_audit: dict[str, Any] | None = None
     success: bool = True
     case_id: str
     timestamp: str
     file_id: str
     document_type: str
+    document: dict[str, Any] = Field(default_factory=dict)
+    expiry: dict[str, Any] = Field(default_factory=dict)
+    qr: dict[str, Any] = Field(default_factory=dict)
     filename: str
     quality: dict[str, Any]
     ocr: OCRResult

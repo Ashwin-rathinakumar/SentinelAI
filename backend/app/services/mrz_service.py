@@ -44,8 +44,56 @@ def validate_check_digit(data: str, check: str) -> tuple[bool, str | None]:
     return True, None
 
 
+def _group_mrz_regions(regions: list[Any]) -> list[str]:
+    """Group bounding boxes by Y-coordinate to reconstruct full horizontal MRZ lines."""
+    dict_regions = [r for r in regions if isinstance(r, dict) and str(r.get("text", "")).strip()]
+    if not dict_regions:
+        return []
+
+    # Sort by Y then X
+    sorted_regions = sorted(
+        dict_regions,
+        key=lambda item: (
+            min((p[1] for p in item.get("box") or [[0, 0]]), default=0),
+            min((p[0] for p in item.get("box") or [[0, 0]]), default=0),
+        ),
+    )
+
+    lines: list[list[str]] = []
+    current_y = None
+    current_line: list[str] = []
+
+    for r in sorted_regions:
+        box = r.get("box") or [[0, 0]]
+        ys = [p[1] for p in box]
+        h = max(ys) - min(ys) if len(ys) >= 2 else 20
+        y = min(ys)
+        threshold_y = max(12.0, h * 0.7)
+
+        if current_y is None or abs(y - current_y) <= threshold_y:
+            current_line.append(str(r["text"]))
+            current_y = y if current_y is None else (current_y + y) / 2
+        else:
+            if current_line:
+                lines.append(current_line)
+            current_line = [str(r["text"])]
+            current_y = y
+    if current_line:
+        lines.append(current_line)
+
+    return ["".join(parts) for parts in lines]
+
+
 def _candidate_lines(raw_text: str, regions: list[Any]) -> tuple[list[str], str]:
     lines: list[str] = []
+
+    # 1. Spatial line grouping from bounding boxes
+    for spatially_merged in _group_mrz_regions(regions):
+        sanitized = mrz_sanitize_line(spatially_merged)
+        if len(sanitized) >= 25 and sanitized not in lines:
+            lines.append(sanitized)
+
+    # 2. Individual region elements
     dict_regions = [r for r in regions if isinstance(r, dict)]
     for region in sorted(
         dict_regions,
@@ -55,74 +103,168 @@ def _candidate_lines(raw_text: str, regions: list[Any]) -> tuple[list[str], str]
         ),
     ):
         sanitized = mrz_sanitize_line(str(region.get("text", "")))
-        if len(sanitized) >= 28:
+        if len(sanitized) >= 25 and sanitized not in lines:
             lines.append(sanitized)
 
     for item in regions:
         if isinstance(item, str):
             sanitized = mrz_sanitize_line(item)
-            if len(sanitized) >= 28 and sanitized not in lines:
+            if len(sanitized) >= 25 and sanitized not in lines:
                 lines.append(sanitized)
 
+    # 3. Raw text lines
     for raw_line in raw_text.splitlines():
         sanitized = mrz_sanitize_line(raw_line)
-        if len(sanitized) >= 28 and sanitized not in lines:
+        if len(sanitized) >= 25 and sanitized not in lines:
             lines.append(sanitized)
 
     collapsed = mrz_sanitize_line(raw_text)
     return lines, collapsed
 
 
+def _normalize_td3_line2(raw: str) -> str:
+    if len(raw) < 28:
+        return raw[:44].ljust(44, "<")
+    prefix = raw[:28]
+    rem = raw[28:]
+    rem_clean = rem.rstrip("<")
+    if rem_clean and rem_clean[-1].isdigit():
+        check_digit = rem_clean[-1]
+        opt = rem_clean[:-1]
+        opt_15 = opt[:15].ljust(15, "<")
+        return (prefix + opt_15 + check_digit)[:44]
+    return raw[:44].ljust(44, "<")
+
 
 def _find_td3(lines: list[str], collapsed: str) -> tuple[str, str] | None:
-    """TD3 is 2 lines of 44 characters (Passports)."""
-    for index, line in enumerate(lines[:-1]):
-        first = line[:44].ljust(44, "<")[:44]
-        second = lines[index + 1][:44].ljust(44, "<")[:44]
-        if first.startswith("P") and len(first) == 44 and len(second) == 44:
-            return first, second
-    
-    # Try finding in collapsed or concatenated stream
-    match = re.search(r"(P[A-Z0-9<]{43})([A-Z0-9<]{44})", collapsed)
-    if match:
-        return match.group(1), match.group(2)
+    candidates: list[tuple[int, str, str]] = []
+
+    for i in range(len(lines)):
+        first_candidate = lines[i]
+        # Match TD3 Line 1 header P< or P[A-Z] followed by country and name with <<
+        m1 = re.search(r"(P[<A-Z0-9][A-Z<]{3}[A-Z<]+<<[A-Z<]*)", first_candidate)
+        if not m1:
+            m1 = re.search(r"(P[<A-Z][A-Z0-9<]{3}[A-Z0-9<]{2,}<<[A-Z0-9<]*)", first_candidate)
+        if not m1:
+            continue
+        line1_raw = m1.group(1)
+        if "<<" not in line1_raw:
+            continue
+        line1 = line1_raw[:44].ljust(44, "<")
+
+        for j in range(len(lines)):
+            if i == j:
+                continue
+            second_candidate = lines[j]
+            # Match TD3 Line 2 structure: 9 chars doc + check + 3 alpha nat + 6 digit DOB + check + sex + 6 digit exp + check
+            m2 = re.search(r"([A-Z0-9<]{9}[0-9][A-Z015826<]{3}[0-9]{6}[0-9][MFX<][0-9]{6}[0-9][A-Z0-9<]*)", second_candidate)
+            if not m2:
+                continue
+            line2 = _normalize_td3_line2(m2.group(1))
+
+            if len(line1) == 44 and len(line2) == 44:
+                score = i + j
+                ok_doc, _ = validate_check_digit(line2[0:9], line2[9])
+                if ok_doc:
+                    score += 20
+                ok_dob, _ = validate_check_digit(line2[13:19], line2[19])
+                if ok_dob:
+                    score += 20
+                ok_exp, _ = validate_check_digit(line2[21:27], line2[27])
+                if ok_exp:
+                    score += 20
+
+                comp_data = line2[0:10] + line2[13:20] + line2[21:43]
+                ok_comp, _ = validate_check_digit(comp_data, line2[43])
+                if ok_comp:
+                    score += 30
+
+                if any(noise in line1 for noise in ["COUNTRY", "PASSPORT", "PAYS", "TYPE"]):
+                    score -= 50
+
+                candidates.append((score, line1, line2))
+
+    if candidates:
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        return candidates[0][1], candidates[0][2]
+
     return None
 
 
+
 def _find_td2(lines: list[str], collapsed: str) -> tuple[str, str] | None:
-    """TD2 is 2 lines of 36 characters (Visas, official docs)."""
-    for index, line in enumerate(lines[:-1]):
-        first = line[:36].ljust(36, "<")[:36]
-        second = lines[index + 1][:36].ljust(36, "<")[:36]
-        if first[0] in {"I", "A", "C", "V", "P"} and len(first) == 36 and len(second) == 36:
-            return first, second
-    match = re.search(r"([IACVP][A-Z0-9<]{35})([A-Z0-9<]{36})", collapsed)
-    if match:
-        return match.group(1), match.group(2)
+    for i in range(len(lines)):
+        first_candidate = lines[i]
+        m1 = re.search(r"([IACV]<[A-Z]{3}[A-Z0-9<]{5,})", first_candidate)
+        if not m1:
+            continue
+        line1_raw = m1.group(1)
+        if "<<" not in line1_raw:
+            continue
+        line1 = line1_raw[:36].ljust(36, "<")
+
+        for j in range(len(lines)):
+            if i == j:
+                continue
+            second_candidate = lines[j]
+            m2 = re.search(r"([A-Z0-9<]{9}[0-9][A-Z015826<]{3}[0-9]{6}[0-9][MFX<][0-9]{6}[0-9][A-Z0-9<]*)", second_candidate)
+            if not m2:
+                continue
+            line2_raw = m2.group(1)
+            line2 = line2_raw[:36].ljust(36, "<")
+
+            if len(line1) == 36 and len(line2) == 36:
+                return line1, line2
+
     return None
 
 
 def _find_td1(lines: list[str], collapsed: str) -> tuple[str, str, str] | None:
-    """TD1 is 3 lines of 30 characters (National ID cards)."""
-    if len(lines) >= 3:
-        for index in range(len(lines) - 2):
-            trio = [lines[index + i][:30].ljust(30, "<")[:30] for i in range(3)]
-            if all(len(item) == 30 for item in trio) and trio[0][0] in {"I", "A", "C"}:
-                return trio[0], trio[1], trio[2]
-    match = re.search(r"([IAC][A-Z0-9<]{29})([A-Z0-9<]{30})([A-Z0-9<]{30})", collapsed)
-    if match:
-        return match.group(1), match.group(2), match.group(3)
+    for i in range(len(lines)):
+        m1 = re.search(r"([IAC]<[A-Z]{3}[A-Z0-9<]{9}[0-9][A-Z0-9<]*)", lines[i])
+        if not m1:
+            continue
+        line1 = m1.group(1)[:30].ljust(30, "<")
+
+        for j in range(len(lines)):
+            if j == i:
+                continue
+            m2 = re.search(r"([0-9]{6}[0-9][MFX<][0-9]{6}[0-9][A-Z015826<]{3}[A-Z0-9<]*)", lines[j])
+            if not m2:
+                continue
+            line2 = m2.group(1)[:30].ljust(30, "<")
+
+            for k in range(len(lines)):
+                if k == i or k == j:
+                    continue
+                if "<<" in lines[k]:
+                    line3 = lines[k][:30].ljust(30, "<")
+                    return line1, line2, line3
+
     return None
 
 
 def _parse_names(name_field: str) -> tuple[str | None, str | None, str | None]:
-    parts = name_field.replace("<", " ").split("  ")
-    parts = [re.sub(r"\s+", " ", part).strip() for part in parts if part.strip()]
+    parts = name_field.split("<<")
     if not parts:
         return None, None, None
-    surname = parts[0].strip()
-    given = parts[1].strip() if len(parts) > 1 else None
-    full = f"{given} {surname}".strip() if given else surname
+    surname = parts[0].replace("<", " ").strip()
+    surname = re.sub(r"\s+", " ", surname) or None
+
+    given = None
+    if len(parts) > 1:
+        given = parts[1].replace("<", " ").strip()
+        given = re.sub(r"\s+", " ", given) or None
+
+    if surname and given:
+        full = f"{given} {surname}".strip()
+    elif surname:
+        full = surname
+    elif given:
+        full = given
+    else:
+        full = None
+
     return full, surname, given
 
 
@@ -413,7 +555,15 @@ def extract_mrz(raw_text: str, regions: list[dict[str, Any]]) -> dict[str, Any]:
     if td2:
         return _parse_td2(*td2)
 
-    almost = [line for line in lines if len(line) >= 28]
+    # Check for incomplete / malformed MRZ fragments
+    all_source_lines = [mrz_sanitize_line(line) for line in raw_text.splitlines()] + lines
+    almost = [
+        line
+        for line in all_source_lines
+        if (re.search(r"[PIACV]<[A-Z]{3}", line) and len(line) >= 10)
+        or (line.startswith("P<") and len(line) >= 8)
+        or ("<<" in line and len(line) >= 15)
+    ]
     if almost:
         return empty_mrz_result(
             "MRZ-like text found but it does not match a complete ICAO line specification.",

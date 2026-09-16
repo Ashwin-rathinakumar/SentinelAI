@@ -13,7 +13,7 @@ export interface HomeResponse {
 }
 
 export type ConnectionStatus = 'checking' | 'connected' | 'disconnected'
-export type DocumentType = 'passport' | 'visa' | 'national_id' | 'driving_license' | 'permit'
+export type DocumentType = 'aadhaar' | 'unknown' | 'passport' | 'visa' | 'national_id' | 'driving_license' | 'permit'
 
 export interface QualityMetric {
   label: string
@@ -64,6 +64,7 @@ export interface OCRResult {
 }
 
 export interface MRZData {
+  applicable?: boolean
   format?: string
   raw_lines?: string[]
   mrz_detected: boolean
@@ -99,6 +100,9 @@ export interface ForensicIndicator {
 }
 
 export interface ForensicResult {
+  tamper_status?: string
+  recompression_detected?: boolean
+  content_tamper_detected?: boolean
   tamper_risk: 'LOW' | 'MEDIUM' | 'HIGH'
   score: number
   indicators: ForensicIndicator[]
@@ -110,10 +114,12 @@ export interface FaceResult {
   image_quality: string
   similarity: number | null
   match: boolean | null
-  status: 'MATCH' | 'MISMATCH' | 'NOT_PROVIDED' | 'UNABLE_TO_VERIFY'
+  status: 'MATCH' | 'MISMATCH' | 'NOT_PROVIDED' | 'UNABLE_TO_VERIFY' | 'FAILED'
   reason: string
   document_face_crop?: string | null
   selfie_face_crop?: string | null
+  model?: string
+  threshold?: number | null
 }
 
 export interface DatabaseResult {
@@ -131,6 +137,9 @@ export interface DatabaseResult {
     registered_status?: string
   }
   field_matches?: Record<string, string>
+  duplicate_identity?: boolean
+  matched_person_id?: number | null
+  duplicate_reason?: string | null
 }
 
 export interface RiskReason {
@@ -142,7 +151,7 @@ export interface RiskReason {
 
 export interface RiskResult {
   risk_score: number
-  risk_level: 'LOW RISK' | 'MEDIUM RISK' | 'HIGH PRIORITY REVIEW'
+  risk_level: 'LOW RISK' | 'MEDIUM RISK' | 'HIGH PRIORITY REVIEW' | 'CRITICAL'
   recommendation: string
   reasons: RiskReason[]
 }
@@ -155,6 +164,10 @@ export interface OfficerDecision {
 }
 
 export interface ScreeningResponse {
+  blockchain_audit?: Partial<BlockchainAuditRecord> | null
+  document?: { type: string; signals: string[] }
+  expiry?: { applicable: boolean; status: string }
+  qr?: { status: string }
   success: boolean
   case_id: string
   timestamp: string
@@ -171,6 +184,32 @@ export interface ScreeningResponse {
   database: DatabaseResult
   risk: RiskResult
   officer_decision?: OfficerDecision | null
+}
+
+export type BlockchainAuditStatus = 'NOT_ANCHORED' | 'PENDING' | 'ANCHORED' | 'VERIFIED' | 'TAMPER_DETECTED' | 'CHAIN_UNAVAILABLE' | 'FAILED'
+export interface BlockchainAuditRecord {
+  id: number
+  record_type: 'SCREENING_RESULT' | 'OFFICER_DECISION'
+  version: number
+  status: BlockchainAuditStatus
+  transaction_hash: string | null
+  block_number: number | null
+  chain_id: number
+  contract_address: string
+  anchored_at: string | null
+  last_verified_at: string | null
+  error_message: string | null
+}
+export interface IntegrityVerificationResult extends Partial<BlockchainAuditRecord> {
+  status: BlockchainAuditStatus
+  digest_match?: boolean | null
+}
+export interface BlockchainNetworkStatus {
+  enabled: boolean
+  rpc_reachable: boolean
+  contract_reachable: boolean
+  chain_id: number | null
+  contract_address: string | null
 }
 
 export interface CaseSummary {

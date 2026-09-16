@@ -10,6 +10,8 @@ import numpy as np
 
 from app.config import OCR_LOW_CONFIDENCE_THRESHOLD, OCR_MIN_TEXT_CHARS
 from app.services.field_extractor import extract_fields
+from app.services.document_type_service import detect_document_type, not_applicable_mrz
+from app.services.aadhaar_service import extract_aadhaar, detect_qr
 from app.services.mrz_service import extract_mrz
 from app.services.ocr_engine import get_engine_name, regions_score, run_ocr
 from app.services.preprocess_service import preprocess_image, rotate_bgr, threshold_variant
@@ -125,8 +127,37 @@ def extract_document(file_id: str, data: bytes, extension: str, document_type: s
             result["raw_text"] = raw_text
             return result
 
-        mrz = extract_mrz(raw_text, regions) if document_type in {"passport", "national_id", "visa"} else None
-        fields = extract_fields(document_type, raw_text, regions, mrz)
+        document = detect_document_type(raw_text)
+        document_type = document["type"].lower()
+        mrz = extract_mrz(raw_text, regions) if document_type == "passport" else not_applicable_mrz()
+        if document_type == "passport":
+            mrz["applicable"] = True
+
+        # If MRZ not found or invalid, attempt dedicated bottom-region MRZ pass
+        if document_type == "passport" and (not mrz or not mrz.get("mrz_valid")):
+            from app.services.preprocess_service import crop_and_enhance_mrz_region
+            mrz_crop = crop_and_enhance_mrz_region(processed)
+            mrz_regions, _ = run_ocr(mrz_crop)
+            if mrz_regions:
+                mrz_crop_text = "\n".join(item["text"] for item in mrz_regions)
+                crop_mrz_res = extract_mrz(mrz_crop_text, mrz_regions)
+                if crop_mrz_res.get("mrz_detected") and (crop_mrz_res.get("mrz_valid") or not (mrz and mrz.get("mrz_detected"))):
+                    mrz = crop_mrz_res
+                    notes.append("mrz_region_enhanced_pass")
+
+        if document_type == "aadhaar":
+            fields = extract_aadhaar(raw_text, regions)
+        elif document_type == "unknown":
+            fields = {}
+        else:
+            fields = extract_fields(document_type, raw_text, regions, mrz)
+        mrz["applicable"] = document_type == "passport"
+        expiry = {"applicable": document_type in {"passport", "visa"},
+                  "status": "NOT_APPLICABLE" if document_type not in {"passport", "visa"} else "NOT_DETECTED"}
+        expiry_value = (fields.get("date_of_expiry") or fields.get("expiry_date") or {}).get("normalized")
+        if expiry["applicable"] and expiry_value:
+            from datetime import date
+            expiry.update(status="EXPIRED" if expiry_value < date.today().isoformat() else "VALID", value=expiry_value)
 
         status = "SUCCESS"
         message = None
@@ -139,6 +170,9 @@ def extract_document(file_id: str, data: bytes, extension: str, document_type: s
 
         clusters = _cluster_count(regions)
         return {
+            "document": document,
+            "expiry": expiry,
+            "qr": detect_qr(processed) if document_type == "aadhaar" else {"status": "NOT_APPLICABLE"},
             "status": status,
             "message": message,
             "raw_text": raw_text,

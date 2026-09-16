@@ -136,6 +136,28 @@ def rotate_bgr(bgr: np.ndarray, angle: int) -> np.ndarray:
     return bgr
 
 
+def crop_and_enhance_mrz_region(bgr: np.ndarray) -> np.ndarray:
+    """Extract bottom ~32% of document image, upscale and enhance for MRZ font recognition."""
+    h, w = bgr.shape[:2]
+    mrz_top = int(h * 0.68)
+    mrz_crop = bgr[mrz_top:h, 0:w]
+
+    # Upscale if height is small
+    crop_h, crop_w = mrz_crop.shape[:2]
+    scale = max(1.5, 320.0 / max(crop_h, 1))
+    if scale > 1.0:
+        new_w = int(crop_w * scale)
+        new_h = int(crop_h * scale)
+        mrz_crop = cv2.resize(mrz_crop, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+
+    gray = cv2.cvtColor(mrz_crop, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
+    blur = cv2.GaussianBlur(gray, (0, 0), 1.0)
+    sharp = cv2.addWeighted(gray, 1.5, blur, -0.5, 0)
+    return cv2.cvtColor(sharp, cv2.COLOR_GRAY2BGR)
+
+
 def preprocess_image(
     image: Image.Image, file_id: str
 ) -> tuple[np.ndarray, Path, list[str]]:

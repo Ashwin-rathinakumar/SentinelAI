@@ -104,8 +104,6 @@ def interpret_document_number(raw: str) -> str:
     if chars and chars[0].isdigit():
         chars[0] = chars[0].translate(CONFUSION_TO_LETTER)
     for index in range(1, len(chars)):
-        if chars[index].isalpha() and index > 1:
-            continue
         if chars[index].isalpha():
             prev_digit = index > 0 and chars[index - 1].isdigit()
             next_digit = index + 1 < len(chars) and chars[index + 1].isdigit()
@@ -114,12 +112,76 @@ def interpret_document_number(raw: str) -> str:
     return "".join(chars)
 
 
+def clean_nationality(raw: str | None) -> str | None:
+    """Extract and normalize clean nationality string, strictly rejecting dates/digits."""
+    if not raw:
+        return None
+    # Remove any dates first e.g. 15/08/1995 or 1995-08-15
+    cleaned = re.sub(r"\b\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}\b", " ", raw)
+    # Remove all remaining digits and punctuation
+    cleaned = re.sub(r"[^A-Za-z\s]", " ", cleaned)
+    tokens = [t.upper() for t in cleaned.split() if len(t) >= 2]
+    if not tokens:
+        return None
+
+    # Filter out common labels/disclaimers if accidentally captured
+    ignored = {"NATIONALITY", "CITIZENSHIP", "SEX", "GENDER", "DOB", "DATE", "BIRTH", "PASSPORT", "NAME", "COUNTRY", "STATE"}
+    valid_tokens = [t for t in tokens if t not in ignored]
+    if not valid_tokens:
+        valid_tokens = tokens
+
+    # Demonym / Country alias map to canonical representation
+    COUNTRY_MAP = {
+        "IND": "INDIAN",
+        "INDIA": "INDIAN",
+        "INDIAN": "INDIAN",
+        "UTO": "UTO",
+        "UTOPIA": "UTO",
+        "UTOPIAN": "UTO",
+        "USA": "USA",
+        "AMERICAN": "AMERICAN",
+        "GBR": "GBR",
+        "BRITISH": "BRITISH",
+        "DEU": "DEU",
+        "GERMAN": "GERMAN",
+        "GERMANY": "GERMAN",
+        "FRA": "FRA",
+        "FRENCH": "FRENCH",
+        "FRANCE": "FRENCH",
+        "ESP": "ESP",
+        "SPANISH": "SPANISH",
+        "SPAIN": "SPANISH",
+        "ITA": "ITA",
+        "ITALIAN": "ITALIAN",
+        "CAN": "CAN",
+        "CANADIAN": "CANADIAN",
+        "AUS": "AUS",
+        "AUSTRALIAN": "AUSTRALIAN",
+        "RUS": "RUS",
+        "RUSSIAN": "RUSSIAN",
+        "CHN": "CHN",
+        "CHINESE": "CHINESE",
+        "JPN": "JPN",
+        "JAPANESE": "JAPANESE",
+    }
+
+    for token in valid_tokens:
+        if token in COUNTRY_MAP:
+            return COUNTRY_MAP[token]
+
+    # Return primary valid token if nothing in map
+    return valid_tokens[0]
+
+
 def mrz_sanitize_line(line: str) -> str:
     """Clean candidate line by removing spaces and standardizing filler characters."""
     if not line:
         return ""
     compact = re.sub(r"\s+", "", line.upper())
-    compact = compact.replace("«", "<").replace("(", "<").replace(")", "<").replace("[", "<").replace("]", "<").replace("{", "<").replace("}", "<")
+    # Standardize common OCR substitution noise for '<'
+    noise_replacements = ["«", "»", "(", ")", "[", "]", "{", "}", "—", "–", "-", "_", "~", "^", ".", ":", ";", "\\", "/", "|", "'", "\"", "`"]
+    for char in noise_replacements:
+        compact = compact.replace(char, "<")
     compact = re.sub(r"[^A-Z0-9<]", "<", compact)
     return compact
 
@@ -181,7 +243,7 @@ def normalize_date_string(raw: str | None) -> str | None:
         except ValueError:
             pass
 
-    return raw_clean
+    return None
 
 
 def compare_date_values(date_a: str | None, date_b: str | None) -> bool:

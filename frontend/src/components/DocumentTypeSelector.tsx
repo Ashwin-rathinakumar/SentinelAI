@@ -16,6 +16,8 @@ export interface DocumentTypeOption {
 }
 
 const DOCUMENT_TYPES: DocumentTypeOption[] = [
+  { id: 'unknown', title: 'Auto detect', description: 'Identify the document from its contents.', icon: FileCheck2 },
+  { id: 'aadhaar', title: 'Aadhaar', description: 'Indian identity card; no passport MRZ or expiry.', icon: CreditCard },
   {
     id: 'passport',
     title: 'Passport',
@@ -58,7 +60,7 @@ export function DocumentTypeSelector({ selected, onSelect }: DocumentTypeSelecto
     <section className="doc-type-section">
       <div className="section-heading">
         <h2>Select Document Type</h2>
-        <p>Choose the identity document you want to screen.</p>
+        <p>Choose a document hint. Screening determines the type from the uploaded contents.</p>
       </div>
 
       <div className="doc-type-grid">

@@ -1,0 +1,11 @@
+.blockchain-card { margin-top: 1.25rem; }
+.blockchain-card > p, .audit-record p { font-size: .86rem; line-height: 1.6; }
+.audit-record { padding: 1rem; margin-top: .8rem; border: 1px solid #334155; border-radius: 10px; }
+.audit-record dl { display: grid; grid-template-columns: 6rem 1fr; gap: .45rem; font-size: .8rem; }
+.audit-record dd { margin: 0; overflow-wrap: anywhere; font-family: monospace; }
+.audit-record dt { color: #94a3b8; }
+.audit-status { font-weight: 700; }
+.audit-integrity-failure { border: 2px solid #ef4444; background: #ef444418; }
+.audit-integrity-failure .audit-status { color: #ef4444; }
+.audit-warning { color: #d97706; }
+.audit-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .8rem; }

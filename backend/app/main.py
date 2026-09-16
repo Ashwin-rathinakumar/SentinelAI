@@ -1,20 +1,41 @@
+import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from datetime import datetime, timezone
 
 from app.config import APP_DESCRIPTION, APP_NAME, APP_VERSION, CORS_ORIGINS
 from app.routers.upload import router as upload_router
 from app.routers.screening import router as screening_router
+from app.routers.blockchain import router as blockchain_router
+from app.routers.cases import router as cases_router
 from app.services.file_service import ensure_uploads_directory
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    """Startup / shutdown lifecycle."""
+    # --- Startup ---
+    ensure_uploads_directory()
+    # Initialize SQLite database and seed demo data on first run
+    from app.database import init_db
+    init_db(seed=True)
+    logger.info("SentinelAI backend started successfully.")
+    yield
+    # --- Shutdown ---
+    logger.info("SentinelAI backend shutting down.")
+
 
 app = FastAPI(
     title=APP_NAME,
     description=APP_DESCRIPTION,
     version=APP_VERSION,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -26,12 +47,9 @@ app.add_middleware(
 )
 
 app.include_router(upload_router)
+app.include_router(cases_router)
 app.include_router(screening_router)
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    ensure_uploads_directory()
+app.include_router(blockchain_router)
 
 
 @app.exception_handler(RequestValidationError)
