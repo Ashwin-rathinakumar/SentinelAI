@@ -1,703 +1,492 @@
-# SenitalAI
+# SentinelAI
 
-**AI-Powered Document Verification and Risk Assessment System**
+**AI-Powered Identity Document Screening, Risk Assessment & Audit System**
 
-SenitalAI is a document verification and identity-risk assessment platform designed for immigration and border-security workflows. It combines passport/document analysis, MRZ validation, face matching, blacklist/database verification, and risk scoring into a unified officer dashboard.
+SentinelAI is an end-to-end identity and travel-document verification prototype built for Smart India Hackathon (SIH). It combines OCR, MRZ validation, face verification, tamper analysis, synthetic registry/watchlist checks, automated risk scoring, officer review, persistent case management, and blockchain-backed audit integrity in a single workflow.
 
-The project is designed as a **Smart India Hackathon (SIH) demonstration prototype**, with synthetic test data for safe and reproducible testing.
-
----
-
-## 🚀 Features
-
-* Passport/document image upload
-* MRZ extraction and validation
-* MRZ check-digit verification
-* Document authenticity/risk assessment
-* Selfie-to-document face matching
-* Database/document verification
-* Blacklist detection
-* Automated risk scoring
-* Secondary-inspection recommendation
-* Officer approval/rejection workflow
-* Officer decision persistence
-* Dashboard for verification results
-* REST API backend using FastAPI
-* Modern frontend using React + Vite
+> Built as a decision-support prototype for document screening and border-security style workflows using synthetic demo data.
 
 ---
 
-## 🏗️ Project Architecture
+## Why SentinelAI?
 
-```text
-                    ┌─────────────────────┐
-                    │      Frontend       │
-                    │   React + Vite      │
-                    │ localhost:5173      │
-                    └──────────┬──────────┘
-                               │
-                               │ REST API
-                               ▼
-                    ┌─────────────────────┐
-                    │      Backend        │
-                    │      FastAPI        │
-                    │  127.0.0.1:8000     │
-                    └──────────┬──────────┘
-                               │
-             ┌─────────────────┼─────────────────┐
-             ▼                 ▼                 ▼
-      ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-      │ MRZ         │   │ Face        │   │ Database /  │
-      │ Validation  │   │ Matching    │   │ Blacklist   │
-      └─────────────┘   └─────────────┘   └─────────────┘
-                               │
-                               ▼
-                    ┌─────────────────────┐
-                    │   Risk Assessment   │
-                    │                     │
-                    │ Low / Medium / High │
-                    └──────────┬──────────┘
-                               │
-                               ▼
-                    ┌─────────────────────┐
-                    │ Officer Dashboard   │
-                    │ Decision & Review   │
-                    └─────────────────────┘
-```
+Manual identity verification at checkpoints can be slow, inconsistent, and difficult to scale.
 
----
+SentinelAI demonstrates how multiple verification signals can be combined into one structured screening pipeline:
 
-# 📁 Project Structure
-
-```text
-SenitalAI/
-│
-├── backend/
-│   ├── app/
-│   │   ├── main.py
-│   │   └── ...
-│   │
-│   ├── tests/
-│   │   ├── demo_samples/
-│   │   └── ...
-│   │
-│   ├── requirements.txt
-│   └── ...
-│
-├── frontend/
-│   ├── src/
-│   ├── public/
-│   ├── package.json
-│   └── ...
-│
-├── README.md
-└── ...
-```
-
----
-
-# 🛠️ Prerequisites
-
-Install the following before running the project:
-
-### Backend
-
-* Python 3.9+
-* pip
-
-### Frontend
-
-* Node.js 18+
-* npm
-
-Verify the installations:
-
-```bash
-python --version
-pip --version
-node --version
-npm --version
-```
-
----
-
-# ⚙️ Installation
-
-Clone the repository:
-
-```bash
-git clone https://github.com/Ashwin-rathinakumar/SenitalAI.git
-```
-
-Navigate into the project:
-
-```bash
-cd SenitalAI
-```
-
----
-
-# 🔧 Backend Setup
-
-Open a terminal and navigate to the backend directory:
-
-### Windows PowerShell
-
-```powershell
-cd backend
-```
-
-Create a virtual environment:
-
-```powershell
-python -m venv venv
-```
-
-Activate the virtual environment:
-
-```powershell
-.\venv\Scripts\Activate.ps1
-```
-
-If PowerShell prevents script execution, you can activate it using:
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-Then:
-
-```powershell
-.\venv\Scripts\Activate.ps1
-```
-
-Install the required Python packages:
-
-```powershell
-pip install -r requirements.txt
-```
-
----
-
-# ▶️ Run the Backend
-
-From the `backend` directory:
-
-```powershell
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-The backend will be available at:
-
-```text
-http://127.0.0.1:8000
-```
-
-FastAPI's interactive API documentation can normally be accessed at:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-Keep this terminal running.
-
----
-
-# 🎨 Frontend Setup
-
-Open a **second terminal** and navigate to the frontend directory:
-
-```powershell
-cd frontend
-```
-
-Install the Node.js dependencies:
-
-```powershell
-npm install
-```
-
----
-
-# ▶️ Run the Frontend
-
-Start the Vite development server:
-
-```powershell
-npm run dev
-```
-
-The frontend will normally be available at:
-
-```text
-http://localhost:5173
-```
-
-Open the displayed URL in a browser.
-
----
-
-# 🧪 SIH Demo Testing
-
-The repository contains synthetic demonstration samples intended for testing the verification workflow.
-
-> **Important:** Use the supplied synthetic/demo documents for testing. Do not upload real passports, identity documents, or other sensitive personal information.
-
----
-
-## Manual Verification Flow
-
-### Step 1: Start the Backend
-
-In **Terminal 1**:
-
-```powershell
-cd backend
-
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-Confirm that the FastAPI server is running on:
-
-```text
-http://127.0.0.1:8000
-```
-
----
-
-### Step 2: Start the Frontend
-
-In **Terminal 2**:
-
-```powershell
-cd frontend
-
-npm install
-npm run dev
-```
-
-Open:
-
-```text
-http://localhost:5173
-```
-
----
-
-# 🔍 Demo Test Cases
-
-## Test Case 1: Valid Passport + Matching Selfie
-
-### Input
-
-Upload:
-
-* Valid synthetic passport
-* Matching synthetic selfie
-
-### Expected Result
-
-The system should indicate:
-
-```text
-Risk Score: < 30
-MRZ: VALID
-Face Match: MATCH
-Database: FOUND
-Officer Decision: APPROVAL
-```
-
-### Expected Workflow
-
-```text
-Passport Upload
-      ↓
+```text id="2ucq6a"
+Document + Selfie
+        ↓
+OCR / Field Extraction
+        ↓
 MRZ Validation
-      ↓
+        ↓
+Document & Tamper Checks
+        ↓
 Face Verification
-      ↓
-Database Verification
-      ↓
-Risk Assessment
-      ↓
-Low Risk
-      ↓
-Officer Approval
-```
-
----
-
-## Test Case 2: Mismatched Passport / Invalid Check Digit
-
-### Input
-
-Upload a synthetic passport containing an invalid MRZ/check digit or mismatched document information.
-
-### Expected Result
-
-The system should indicate:
-
-```text
-Risk Level: HIGH
-MRZ: FAIL
-Risk Contribution: +20
-Recommendation: SECONDARY INSPECTION
-```
-
-The officer should be able to review the verification result and record the appropriate decision.
-
-### Expected Workflow
-
-```text
-Passport Upload
-      ↓
-MRZ Extraction
-      ↓
-Check-Digit Validation
-      ↓
-MRZ FAIL
-      ↓
-Risk Score Increased
-      ↓
-Secondary Inspection Recommended
-```
-
----
-
-## Test Case 3: Blacklisted Document
-
-### Input
-
-Upload the supplied synthetic blacklisted-document sample.
-
-### Expected Result
-
-The system should indicate:
-
-```text
-Blacklist Match: DETECTED
-Risk Contribution: +30
-Database Alert: ACTIVE
-Priority: HIGH
-```
-
-The system should recommend high-priority review.
-
-### Expected Workflow
-
-```text
-Passport Upload
-      ↓
-Document / Database Verification
-      ↓
-Blacklist Match
-      ↓
-Risk Score Increased
-      ↓
-Database Alert
-      ↓
-High Priority Review
-```
-
----
-
-# 👮 Officer Decision Workflow
-
-After the automated verification process:
-
-1. Review the verification results.
-2. Review MRZ validation status.
-3. Review face-match status.
-4. Review database/blacklist status.
-5. Review the calculated risk level.
-6. Review the system recommendation.
-7. Select the appropriate officer decision.
-8. Submit the decision.
-9. Verify that the decision is persisted.
-10. Refresh or revisit the dashboard and confirm that the decision remains recorded.
-
-The expected workflow is:
-
-```text
-Automated Verification
+        ↓
+Registry / Watchlist Check
         ↓
 Risk Assessment
         ↓
 Officer Review
         ↓
-Officer Decision
+Persistent Decision
         ↓
-Decision Persistence
-        ↓
-Dashboard
+Blockchain Audit
 ```
 
 ---
 
-# 📊 Risk Assessment
+## Core Features
 
-The system uses multiple verification signals to determine the overall risk level.
-
-Example risk contributors include:
-
-| Verification Signal          |     Example Effect |
-| ---------------------------- | -----------------: |
-| Valid MRZ                    | No additional risk |
-| Invalid MRZ/check digit      |                +20 |
-| Blacklist match              |                +30 |
-| Face mismatch                |     Increased risk |
-| Other verification anomalies |     Increased risk |
-
-The final risk assessment is used to classify the verification result and determine whether additional officer review is required.
-
-> The exact scoring logic is implemented in the backend and should be treated as part of the prototype's demonstration logic rather than a production immigration decision system.
-
----
-
-# 🔌 API
-
-Once the backend is running, FastAPI provides interactive API documentation at:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-You can use the Swagger UI to inspect and test the available API endpoints.
-
-The OpenAPI schema is also available at:
-
-```text
-http://127.0.0.1:8000/openapi.json
-```
+* Passport / identity-document upload
+* OCR-based field extraction
+* MRZ extraction and ICAO-style validation
+* MRZ check-digit verification
+* Document quality and authenticity checks
+* Tamper and forensic signal analysis
+* Selfie-to-document face verification
+* Synthetic identity registry lookup
+* Blacklist / watchlist detection
+* Duplicate / mismatch detection
+* Automated risk scoring
+* Human-readable risk reasons
+* Secondary-inspection recommendation
+* Officer approval / rejection / review workflow
+* Officer remarks and decision persistence
+* Case reopening and retrieval
+* Blockchain-based audit anchoring
+* Audit integrity verification
+* Graceful fallback when optional services are unavailable
+* React-based officer dashboard
+* FastAPI REST backend
+* SQLite persistence layer
 
 ---
 
-# 🧪 Testing
+## Tech Stack
 
-Backend tests can be executed from the `backend` directory.
+### Backend
 
-If the project uses `pytest`, run:
+* Python
+* FastAPI
+* SQLAlchemy
+* SQLite
+* RapidOCR / ONNX Runtime
+* Face verification pipeline
+* Pytest
 
-```powershell
-pytest
-```
+### Frontend
 
-For verbose output:
+* React
+* TypeScript
+* Vite
 
-```powershell
-pytest -v
-```
+### Blockchain
 
-Synthetic demo samples are available under:
-
-```text
-backend/tests/demo_samples/
-```
+* Solidity
+* Hardhat
+* Local Ethereum development network
+* Canonicalized audit hashes
 
 ---
 
-# 🐛 Troubleshooting
+## System Architecture
 
-## Backend does not start
-
-Verify Python:
-
-```powershell
-python --version
-```
-
-Make sure the virtual environment is activated:
-
-```powershell
-.\venv\Scripts\Activate.ps1
-```
-
-Reinstall dependencies:
-
-```powershell
-pip install -r requirements.txt
-```
-
-Then start the server again:
-
-```powershell
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```text id="ypf997"
+┌───────────────────────────────┐
+│        React Frontend         │
+│        Vite + TypeScript      │
+└──────────────┬────────────────┘
+               │ REST API
+               ▼
+┌───────────────────────────────┐
+│        FastAPI Backend        │
+├───────────────────────────────┤
+│ OCR / Field Extraction        │
+│ MRZ Validation                │
+│ Document Validation           │
+│ Tamper Analysis               │
+│ Face Verification             │
+│ Registry / Watchlist Checks   │
+│ Risk Engine                   │
+└──────────────┬────────────────┘
+               │
+       ┌───────┴────────┐
+       ▼                ▼
+┌─────────────┐   ┌──────────────┐
+│   SQLite    │   │   Hardhat    │
+│ Persistence │   │ Audit Ledger │
+└─────────────┘   └──────────────┘
 ```
 
 ---
 
-## `uvicorn` command not found
+## Verification Pipeline
 
-Use:
+A typical screening request performs the following:
 
-```powershell
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+1. Document upload
+2. Image preprocessing and quality analysis
+3. Document-type detection
+4. OCR and field extraction
+5. MRZ parsing and check-digit validation
+6. Document consistency validation
+7. Tamper / forensic analysis
+8. Face comparison against selfie or camera input
+9. Registry lookup
+10. Watchlist / blacklist verification
+11. Risk-score calculation
+12. Recommendation generation
+13. Case persistence
+14. Officer decision
+15. Blockchain audit anchoring
+
+---
+
+## Risk Assessment
+
+SentinelAI combines multiple verification signals into a single backend risk result.
+
+Example risk signals include:
+
+| Signal                    | Effect                    |
+| ------------------------- | ------------------------- |
+| Valid MRZ                 | No additional risk        |
+| Invalid MRZ / check digit | Risk increase             |
+| OCR–MRZ mismatch          | Risk increase             |
+| Expired document          | Risk increase             |
+| Face mismatch             | Significant risk signal   |
+| Document tampering        | Significant risk signal   |
+| Watchlist hit             | High-priority risk signal |
+| Database mismatch         | Risk increase             |
+
+The final result includes:
+
+```json id="g5rlmj"
+{
+  "score": 65,
+  "level": "HIGH",
+  "reasons": [
+    "Face mismatch detected",
+    "Watchlist match detected"
+  ],
+  "recommendation": "SECONDARY_INSPECTION"
+}
 ```
 
-instead of:
+The scoring logic is prototype logic intended for demonstration and is not a production immigration decision system.
 
-```powershell
-uvicorn app.main:app
+---
+
+## Human-in-the-Loop Decision Flow
+
+SentinelAI does not treat automated screening as the final authority.
+
+After analysis, an officer can review:
+
+* extracted identity
+* MRZ status
+* face result
+* tamper findings
+* registry status
+* watchlist result
+* risk score
+* risk reasons
+* system recommendation
+
+The officer can then record:
+
+* `APPROVED`
+* `REJECTED`
+* `SECONDARY_INSPECTION`
+
+Officer remarks and timestamps are persisted with the case.
+
+---
+
+## Blockchain Audit Layer
+
+SentinelAI uses a local Hardhat-based blockchain audit layer to demonstrate tamper-evident case auditing.
+
+Instead of storing sensitive case information directly on-chain, the system:
+
+1. canonicalizes relevant case data
+2. generates a cryptographic hash
+3. anchors the hash through a smart contract
+4. stores the transaction / audit metadata
+5. verifies integrity by recomputing and comparing hashes
+
+The screening pipeline continues operating even if the blockchain service is temporarily unavailable.
+
+---
+
+## Database
+
+The application uses SQLite for prototype persistence.
+
+Main entities include:
+
+```text id="c41s4g"
+verification_cases
+persons
+documents
+watchlist
+watchlist_checks
+ocr_results
+face_results
+face_embeddings
+tamper_results
+blockchain_audits
+```
+
+The registry and watchlist data are synthetic demonstration records.
+
+---
+
+## Validation Status
+
+The final integrated build has been validated with:
+
+```text id="pmlnof"
+Backend tests:            127 passed
+Persistence/readiness:     19 passed
+Contract tests:            12 passed
+Real demo scenarios:        4 passed
+E2E:                       Passed
+Smoke tests:               Passed
+Python compilation:        Passed
+Frontend build:            Passed
+Blockchain anchoring:      Passed
+Audit integrity check:     Passed
+```
+
+The remaining hardware-dependent verification is physical webcam interaction in the target browser/environment.
+
+---
+
+## Demo Scenarios
+
+### Clean Traveller
+
+Expected behavior:
+
+```text id="s5eiev"
+MRZ: VALID
+Face: MATCH
+Watchlist: CLEAR
+Tamper: CLEAR
+Risk: LOW
+Recommendation: APPROVAL / normal review
+```
+
+### Face Mismatch
+
+Expected behavior:
+
+```text id="6nuk1x"
+Face: MISMATCH
+Risk: Increased
+Reason: Face verification failure
+Recommendation: Additional review
+```
+
+### Watchlist Match
+
+Expected behavior:
+
+```text id="3jdw0t"
+Watchlist: MATCH
+Risk: HIGH
+Priority: HIGH
+Recommendation: SECONDARY INSPECTION
+```
+
+### Invalid / Tampered Document
+
+Expected behavior:
+
+```text id="x89on1"
+Validation or Tamper Check: FAILED
+Risk: Increased
+Reason: Visible in risk breakdown
+Recommendation: Manual review
 ```
 
 ---
 
-## Frontend dependencies are missing
+## Quick Start
 
-From the frontend directory:
+### 1. Clone
 
-```powershell
-npm install
-```
-
-Then:
-
-```powershell
-npm run dev
-```
-
----
-
-## Port 8000 is already in use
-
-Stop the process using port `8000`, or start FastAPI on another port:
-
-```powershell
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
-```
-
-If the frontend expects port `8000`, make sure the frontend API configuration is updated accordingly.
-
----
-
-## Port 5173 is already in use
-
-Vite can automatically select another available port. Check the terminal output for the actual URL.
-
----
-
-# 🔐 Security and Privacy
-
-SenitalAI is a demonstration/research prototype.
-
-### Do not upload:
-
-* Real passports
-* Real identity documents
-* Real biometric data
-* Real personal information
-* Production credentials
-* Sensitive government data
-
-Use only synthetic or intentionally generated demonstration data while testing this repository.
-
-If deploying the project in a real environment, additional security controls, authentication, authorization, encryption, audit logging, secure storage, privacy controls, and regulatory compliance would be required.
-
----
-
-# ⚠️ Disclaimer
-
-SenitalAI is a **prototype developed for demonstration and educational/hackathon purposes**.
-
-The system must not be used as the sole basis for real-world immigration, border-control, law-enforcement, identity, or other high-impact decisions.
-
-Automated risk scores and verification results should be treated as decision-support information requiring appropriate human review.
-
----
-
-# 🧑‍💻 Development
-
-Typical development workflow:
-
-```powershell
-# Clone repository
+```powershell id="mzvgqe"
 git clone https://github.com/Ashwin-rathinakumar/SenitalAI.git
-
-# Enter project
 cd SenitalAI
-
-# Terminal 1
-cd backend
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-
-# Terminal 2
-cd frontend
-npm install
-npm run dev
 ```
 
----
+### 2. Start Hardhat
 
-# 📌 Quick Start
-
-For developers who already have Python and Node.js installed:
-
-### Terminal 1
-
-```powershell
-cd SenitalAI\backend
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```powershell id="euu8l8"
+.\scripts\start-hardhat.ps1
 ```
 
-### Terminal 2
+### 3. Deploy Contract and Start Backend
 
-```powershell
-cd SenitalAI\frontend
-npm install
-npm run dev
+In a new terminal:
+
+```powershell id="9n6jhz"
+.\scripts\deploy-local.ps1
+.\scripts\start-backend.ps1
 ```
 
-Then open:
+### 4. Start Frontend
 
-```text
+In another terminal:
+
+```powershell id="nwy8y2"
+.\scripts\start-frontend.ps1
+```
+
+### 5. Verify System Health
+
+```powershell id="ivn7y8"
+python scripts/check-demo.py --warmup
+```
+
+Expected output:
+
+```text id="t7tzkn"
+Backend: OK
+Database: OK
+OCR: OK
+Face Service: OK
+Blockchain RPC: OK
+Audit Contract: OK
+Frontend: OK
+Application status: READY
+```
+
+### 6. Open the Application
+
+```text id="24lml6"
 http://localhost:5173
-```
-
-Backend:
-
-```text
-http://127.0.0.1:8000
 ```
 
 API documentation:
 
-```text
+```text id="wuncts"
 http://127.0.0.1:8000/docs
 ```
 
 ---
 
-# 📜 License
+## Project Structure
 
-Add the project's chosen license here.
-
-For example:
-
-```text
-MIT License
+```text id="ee6gai"
+SentinelAI/
+│
+├── backend/
+│   ├── app/
+│   │   ├── routers/
+│   │   ├── schemas/
+│   │   ├── services/
+│   │   ├── database.py
+│   │   ├── models.py
+│   │   └── main.py
+│   │
+│   ├── tests/
+│   └── requirements.txt
+│
+├── blockchain/
+│   ├── contracts/
+│   ├── scripts/
+│   └── hardhat.config.js
+│
+├── frontend/
+│   ├── src/
+│   └── package.json
+│
+├── scripts/
+│   ├── start-hardhat.ps1
+│   ├── deploy-local.ps1
+│   ├── start-backend.ps1
+│   ├── start-frontend.ps1
+│   ├── check-demo.py
+│   └── verify-final-demo.py
+│
+├── INTEGRATION_REPORT.md
+└── README.md
 ```
 
-if the repository is intended to be released under the MIT License.
+---
+
+## Synthetic Demo Registry
+
+The project intentionally uses synthetic identities and watchlist records for safe, reproducible testing.
+
+It is **not connected to any live government, immigration, passport, law-enforcement, or border-security database**.
+
+This design keeps the prototype demonstrable without exposing or depending on sensitive real-world datasets.
 
 ---
 
-# 👥 Contributors
+## Security & Privacy
 
-Developed as part of a **Smart India Hackathon (SIH)** project.
+Do not use this repository with:
 
-Contributions, improvements, bug fixes, and suggestions are welcome.
+* real passports
+* real biometric data
+* sensitive identity information
+* production credentials
+* confidential government records
+
+A production deployment would require additional controls such as:
+
+* authentication and authorization
+* encrypted storage and transport
+* secrets management
+* access logging
+* data-retention controls
+* secure biometric handling
+* regulatory and privacy compliance
+* hardened infrastructure
 
 ---
 
-## ⭐ SenitalAI
+## Limitations
 
-**Document Verification → Risk Assessment → Human Review → Decision Persistence**
+* Registry and watchlist data are synthetic.
+* Blockchain currently uses a local Hardhat environment.
+* Hardhat chain history resets when the local node is restarted.
+* Risk scoring is demonstration logic, not a certified decision model.
+* Physical webcam behavior depends on browser and device permissions.
+* The prototype is not connected to real government databases.
 
-Built as an AI-assisted verification prototype for secure and efficient identity-document screening.
+---
 
+## Disclaimer
+
+SentinelAI is a research, educational, and hackathon prototype.
+
+It must not be used as the sole basis for immigration, border-control, law-enforcement, identity, or other high-impact decisions.
+
+Automated verification outputs are intended to support human review, not replace it.
+
+---
+
+## Project Status
+
+**Prototype: Complete**
+
+**Integration: Validated**
+
+**Local Demo: Ready**
+
+**Public Deployment: Optional / Future Work**
+
+---
+
+## SentinelAI
+
+**Document Verification → Identity Validation → Risk Assessment → Human Review → Persistent Decision → Blockchain Audit**
