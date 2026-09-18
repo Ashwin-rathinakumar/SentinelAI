@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
+import copy
+import os
+from uuid import uuid4
 import threading
 from datetime import datetime, timezone
 from typing import Any
@@ -18,10 +22,13 @@ def ensure_sessions_directory() -> None:
 
 
 def _session_path(session_id: str) -> Any:
+    if not re.fullmatch(r"CASE-[A-Za-z0-9-]{1,58}", session_id):
+        raise ValueError("Invalid case identifier")
     return SESSIONS_DIR / f"{session_id}.json"
 
 
 def create_or_update_session(session_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    path = _session_path(session_id)
     ensure_sessions_directory()
     record = {
         **payload,
@@ -36,11 +43,13 @@ def create_or_update_session(session_id: str, payload: dict[str, Any]) -> dict[s
         existing = _sessions.get(session_id)
         if existing and "created_at" in existing:
             record["created_at"] = existing["created_at"]
-        _sessions[session_id] = record
-        _session_path(session_id).write_text(
-            json.dumps(record, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        temporary = path.with_suffix(f".{uuid4().hex}.tmp")
+        try:
+            temporary.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+        _sessions[session_id] = copy.deepcopy(record)
     return record
 
 
@@ -96,9 +105,12 @@ def get_session(session_id: str) -> dict[str, Any] | None:
     with _lock:
         cached = _sessions.get(session_id)
         if cached:
-            return cached
+            return copy.deepcopy(cached)
 
-    path = _session_path(session_id)
+    try:
+        path = _session_path(session_id)
+    except ValueError:
+        return None
     if not path.exists():
         return None
 

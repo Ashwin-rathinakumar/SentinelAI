@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, AliasChoices
 
 class OCRResult(BaseModel):
     status: str = "FAILED"
@@ -42,6 +42,7 @@ class Indicator(BaseModel):
     description: str
 
 class ForensicResult(BaseModel):
+    error: str | None = None
     recompression_detected: bool = False
     metadata_anomaly: bool = False
     content_tamper_detected: bool = False
@@ -68,10 +69,11 @@ class DatabaseResult(BaseModel):
     found: bool = False
     status: str = 'NOT_FOUND'
     blacklisted: bool = False
-    source: str = 'SENTINELAI VERIFICATION DATABASE'
+    source: str = 'SENTINELAI SIMULATED DEMO DATABASE'
     note: str = 'Verification database query complete.'
     record: dict[str, Any] | None = None
     field_matches: dict[str, str] = Field(default_factory=dict)
+    duplicate_check_status: str = "NOT_RUN"
     duplicate_identity: bool = False
     matched_person_id: int | None = None
     duplicate_reason: str | None = None
@@ -85,8 +87,14 @@ class RiskResult(BaseModel):
 
 class OfficerDecisionRequest(BaseModel):
     decision: Literal['APPROVE', 'REJECT', 'MANUAL_VERIFICATION']
-    notes: str | None = None
-    officer_id: str | None = 'OFFICER-DEMO'
+    notes: str | None = Field(default=None, validation_alias=AliasChoices("notes", "remarks"))
+    officer_id: str = 'OFFICER-DEMO'
+
+    @field_validator("decision", mode="before")
+    @classmethod
+    def normalize_decision(cls, value):
+        return {"APPROVED": "APPROVE", "REJECTED": "REJECT",
+                "SECONDARY_INSPECTION": "MANUAL_VERIFICATION"}.get(value, value)
 
 class OfficerDecision(BaseModel):
     decision: str

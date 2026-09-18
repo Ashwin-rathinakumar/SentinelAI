@@ -233,7 +233,7 @@ def persist_screening_case(
     # 6. Create or Update TamperResult
     if tamper:
         tamper_risk = getattr(tamper, "tamper_risk", "LOW") or "LOW"
-        tamper_detected = tamper_risk in ("MEDIUM", "HIGH") or tamper_score >= 15.0
+        tamper_detected = bool(getattr(tamper, "content_tamper_detected", False))
         indicators_raw = getattr(tamper, "indicators", []) or []
         serialized_indicators = [
             ind.model_dump() if hasattr(ind, "model_dump") else (ind if isinstance(ind, dict) else str(ind))
@@ -307,3 +307,16 @@ def persist_screening_case(
     db.commit()
     db.expire_all()
     return case
+
+
+def save_case_snapshot(db: Session, case_id: str, payload: dict) -> None:
+    """Keep the complete response in the existing JSON details column."""
+    row = db.scalar(select(OCRResultModel).where(OCRResultModel.case_id == case_id))
+    if row:
+        row.details = {**(row.details or {}), "screening_snapshot": payload}
+        db.commit()
+
+
+def load_case_snapshot(db: Session, case_id: str) -> dict | None:
+    row = db.scalar(select(OCRResultModel).where(OCRResultModel.case_id == case_id))
+    return (row.details or {}).get("screening_snapshot") if row else None

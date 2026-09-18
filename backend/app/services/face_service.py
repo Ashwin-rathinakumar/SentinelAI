@@ -279,7 +279,8 @@ def verify_faces(document_data: bytes, selfie_data: bytes | None) -> FaceResult:
     if doc_face.embedding is not None and selfie_face.embedding is not None:
         similarity = cosine_similarity(doc_face.embedding, selfie_face.embedding)
     else:
-        similarity = 0.0
+        return FaceResult(status="UNABLE_TO_VERIFY", model=model_name, threshold=threshold,
+                          reason="Face embeddings unavailable; biometric comparison was not performed.")
 
     similarity = round(similarity, 4)
     match = similarity >= threshold

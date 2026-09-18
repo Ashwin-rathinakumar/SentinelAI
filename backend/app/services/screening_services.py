@@ -167,7 +167,7 @@ def database_lookup(number: str | None, extracted_fields: dict[str, Any] | None 
             found=True,
             status=status_str,
             blacklisted=is_blacklisted,
-            source="SENTINELAI VERIFICATION DATABASE",
+            source="SENTINELAI SIMULATED DEMO DATABASE",
             note=doc.note or "Database record lookup complete.",
             record=record,
             field_matches=field_matches,
@@ -266,7 +266,7 @@ def validate_document(fields: dict[str, Any], mrz: dict[str, Any], document_type
         if ocr_name and mrz_name:
             c_ocr_name = strip_non_alnum(str(ocr_name)).upper()
             c_mrz_name = strip_non_alnum(str(mrz_name)).upper()
-            if c_ocr_name == c_mrz_name or c_ocr_name in c_mrz_name or c_mrz_name in c_ocr_name or all(part in c_ocr_name for part in c_mrz_name.split() if len(part) > 2):
+            if c_ocr_name == c_mrz_name or c_ocr_name in c_mrz_name or c_mrz_name in c_ocr_name or sorted(re.findall(r"[A-Z]+", str(ocr_name).upper())) == sorted(re.findall(r"[A-Z]+", str(mrz_name).upper())):
                 consistency["full_name"] = "MATCH"
             else:
                 consistency["full_name"] = "MISMATCH"
@@ -561,7 +561,7 @@ def calculate_risk(
         sim_pct = int((face.similarity or 0) * 100)
         add_reason("FACE_MISMATCH",
                    f"Live selfie facial similarity ({sim_pct}%) is below verification threshold.", "HIGH")
-    elif face.status == "FAILED":
+    elif face.status in {"FAILED", "UNAVAILABLE", "MODEL_UNAVAILABLE", "UNABLE_TO_VERIFY"}:
         add_reason("FACE_FAILED",
                    f"Face verification failed: {face.reason}", "MEDIUM")
 
@@ -602,6 +602,18 @@ def calculate_risk(
 
     if document_type != "passport" and total_score < 60 and not database.blacklisted:
         recommendation = "SECONDARY_MANUAL_VERIFICATION"
+    incomplete = []
+    if face.match is None:
+        incomplete.append("Face verification incomplete: " + face.reason)
+    if database.status in {"UNAVAILABLE", "UNABLE_TO_CHECK", "NOT_FOUND"}:
+        incomplete.append("Identity could not be verified against the simulated registry.")
+    if tamper.tamper_status == "UNAVAILABLE":
+        incomplete.append("Forensic analysis is unavailable.")
+    if incomplete:
+        reasons.extend({"code": "VERIFICATION_INCOMPLETE", "applicable": True, "points": 0,
+                        "severity": "MEDIUM", "description": message} for message in incomplete)
+    if (incomplete or not validation.valid or face.match is False or tamper.content_tamper_detected) and risk_level == "LOW RISK" and document_type == "passport":
+        recommendation = "SECONDARY_INSPECTION"
     checks = [{"signal": code, "applicable": applicable,
                "points": sum(r["points"] for r in reasons if r["code"] == code)}
               for code, applicable in [("MRZ_MISSING", mrz_applicable), ("MRZ_CHECK_FAILED", mrz_applicable),

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   AlertCircle,
   AlertTriangle,
@@ -46,6 +47,9 @@ const fieldLabels: Record<string, string> = {
 }
 
 export function NewScreeningPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const savedCaseId = searchParams.get("case")
+  const [loadingCase, setLoadingCase] = useState(false)
   const [documentType, setDocumentType] = useState<DocumentType | null>('unknown')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [selfie, setSelfie] = useState<File | null>(null)
@@ -58,6 +62,12 @@ export function NewScreeningPage() {
 
   // Camera capture state
   const [cameraActive, setCameraActive] = useState(false)
+  const [cameraStarting, setCameraStarting] = useState(false)
+  const [cameraReady, setCameraReady] = useState(false)
+  const [capturing, setCapturing] = useState(false)
+  const [selfiePreview, setSelfiePreview] = useState<string | null>(null)
+  const cameraRequestRef = useRef(0)
+  const cameraPendingRef = useRef(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -71,53 +81,118 @@ export function NewScreeningPage() {
   // Clean up camera on unmount
   useEffect(() => {
     return () => {
+      cameraRequestRef.current += 1
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop())
       }
     }
   }, [])
 
+  useEffect(() => {
+    if (cameraActive && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current
+    }
+  }, [cameraActive])
+
+  useEffect(() => {
+    if (!savedCaseId) return
+    let cancelled = false
+    setLoadingCase(true)
+    setError(null)
+    api.getCaseDetails(savedCaseId).then(({ case: saved }) => {
+      if (cancelled) return
+      if (!saved.risk || !saved.ocr || !saved.quality) throw new Error('This legacy case has no complete screening result.')
+      setResult(saved)
+      setOfficerNotes(saved.officer_decision?.notes || '')
+      setPhase('complete')
+    }).catch((err) => {
+      if (!cancelled) setError(err instanceof Error ? err.message : 'Unable to load case.')
+    }).finally(() => {
+      if (!cancelled) setLoadingCase(false)
+    })
+    return () => { cancelled = true }
+  }, [savedCaseId])
+
+  useEffect(() => {
+    if (!selfie) { setSelfiePreview(null); return }
+    const url = URL.createObjectURL(selfie)
+    setSelfiePreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [selfie])
+
+  const stopCamera = () => {
+    cameraRequestRef.current += 1
+    cameraPendingRef.current = false
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
+    if (videoRef.current) videoRef.current.srcObject = null
+    setCameraActive(false)
+    setCameraStarting(false)
+    setCameraReady(false)
+    setCapturing(false)
+  }
+
   const startCamera = async () => {
+    if (cameraPendingRef.current || streamRef.current) return
     setCameraError(null)
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError('Camera access is unavailable in this browser. Use localhost or HTTPS, or upload a selfie file.')
+      return
+    }
+    const request = ++cameraRequestRef.current
+    cameraPendingRef.current = true
+    setCameraStarting(true)
+    setCameraReady(false)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
         audio: false,
       })
+      if (request !== cameraRequestRef.current) {
+        stream.getTracks().forEach((track) => track.stop())
+        return
+      }
       streamRef.current = stream
       setCameraActive(true)
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-      }
     } catch (err) {
-      setCameraError('Unable to access webcam. Please check permissions or upload a file.')
+      if (request === cameraRequestRef.current) {
+        const denied = err instanceof DOMException && err.name === 'NotAllowedError'
+        setCameraError(denied ? 'Camera permission was denied. Allow camera access in your browser or upload a selfie file.'
+          : 'Unable to access webcam. Check that it is connected and not in use, or upload a selfie file.')
+      }
+    } finally {
+      if (request === cameraRequestRef.current) {
+        cameraPendingRef.current = false
+        setCameraStarting(false)
+      }
     }
-  }
-
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop())
-      streamRef.current = null
-    }
-    setCameraActive(false)
   }
 
   const capturePhoto = () => {
-    if (!videoRef.current || !canvasRef.current) return
     const video = videoRef.current
     const canvas = canvasRef.current
-    canvas.width = video.videoWidth || 640
-    canvas.height = video.videoHeight || 480
-    const ctx = canvas.getContext('2d')
-    if (ctx) {
+    if (!cameraReady || capturing || !video || !canvas || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return
+    const request = cameraRequestRef.current
+    setCapturing(true)
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    try {
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('Canvas unavailable')
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
       canvas.toBlob((blob) => {
+        if (request !== cameraRequestRef.current) return
         if (blob) {
-          const capturedFile = new File([blob], 'camera_selfie.jpg', { type: 'image/jpeg' })
-          setSelfie(capturedFile)
+          setSelfie(new File([blob], 'camera_selfie.jpg', { type: 'image/jpeg' }))
           stopCamera()
+        } else {
+          setCapturing(false)
+          setCameraError('Capture failed. Try again or upload a selfie file.')
         }
       }, 'image/jpeg', 0.92)
+    } catch {
+      setCapturing(false)
+      setCameraError('Capture failed. Try again or upload a selfie file.')
     }
   }
 
@@ -126,6 +201,7 @@ export function NewScreeningPage() {
     setError(null)
     setResult(null)
     setDecisionMessage(null)
+    stopCamera()
     setPhase('uploading')
     try {
       const data = await api.screenDocument(selectedFile, documentType, selfie, (p) => setPhase(p))
@@ -158,6 +234,7 @@ export function NewScreeningPage() {
     setResult(null)
     setPhase('idle')
     setError(null)
+    setSearchParams({})
     setOfficerNotes('')
     setDecisionMessage(null)
     stopCamera()
@@ -173,6 +250,7 @@ export function NewScreeningPage() {
 
   return (
     <div className="screening-page">
+      {loadingCase && <p role="status">Loading saved screening case…</p>}
       <ScreeningStepper currentStep={currentStep} documentTypeSelected={selected} uploadComplete={complete} />
 
       {!result && (
@@ -218,7 +296,7 @@ export function NewScreeningPage() {
                       accept="image/*"
                       id="selfie-upload"
                       className="selfie-file-input"
-                      onChange={(e) => setSelfie(e.target.files?.[0] ?? null)}
+                      onChange={(e) => { stopCamera(); setSelfie(e.target.files?.[0] ?? null) }}
                     />
                     <label htmlFor="selfie-upload" className="selfie-upload-btn">
                       {selfie ? `Selected: ${selfie.name}` : 'Upload Selfie File…'}
@@ -228,9 +306,10 @@ export function NewScreeningPage() {
                       type="button"
                       className="selfie-upload-btn"
                       style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+                      disabled={cameraStarting}
                       onClick={() => void startCamera()}
                     >
-                      <Camera size={16} /> Use Live Camera
+                      <Camera size={16} /> {cameraStarting ? 'Requesting camera…' : selfie ? 'Retake with Camera' : 'Use Live Camera'}
                     </button>
 
                     {selfie && (
@@ -248,10 +327,10 @@ export function NewScreeningPage() {
                   </div>
                 ) : (
                   <div className="camera-preview-box">
-                    <video ref={videoRef} autoPlay playsInline className="camera-video-element" />
+                    <video ref={videoRef} autoPlay playsInline muted onLoadedData={() => setCameraReady(true)} onEmptied={() => setCameraReady(false)} className="camera-video-element" />
                     <canvas ref={canvasRef} style={{ display: 'none' }} />
                     <div className="camera-controls-row">
-                      <button type="button" className="camera-snap-btn" onClick={capturePhoto}>
+                      <button type="button" className="camera-snap-btn" disabled={!cameraReady || capturing} onClick={capturePhoto}>
                         <Camera size={16} style={{ display: 'inline', marginRight: '4px' }} /> Snap Selfie
                       </button>
                       <button type="button" className="camera-cancel-btn" onClick={stopCamera}>
@@ -261,6 +340,8 @@ export function NewScreeningPage() {
                   </div>
                 )}
 
+                {cameraStarting && <button type="button" className="camera-cancel-btn" onClick={stopCamera}>Cancel camera request</button>}
+                {selfiePreview && !cameraActive && <img src={selfiePreview} alt="Selected selfie preview" style={{ maxWidth: '180px', maxHeight: '180px', objectFit: 'contain', marginTop: '12px' }} />}
                 {cameraError && <p style={{ color: '#f87171', fontSize: '0.85rem', marginTop: '0.5rem' }}>{cameraError}</p>}
               </div>
             )}
@@ -308,7 +389,7 @@ export function NewScreeningPage() {
           <section className={`executive-risk-banner ${getRiskBadgeClass(result.risk.risk_level)}`}>
             <div className="banner-left">
               <div className="risk-level-tag">
-                {result.risk.risk_level.includes('HIGH') ? (
+                {(result.risk.risk_level.includes('HIGH') || result.risk.risk_level === 'CRITICAL') ? (
                   <ShieldAlert size={28} />
                 ) : result.risk.risk_level.includes('MEDIUM') ? (
                   <AlertTriangle size={28} />
@@ -447,6 +528,12 @@ export function NewScreeningPage() {
             </div>}
           </div>
 
+          <div className="result-card">
+            <div className="card-header"><FileCheck size={20} /><h3>Document Validation</h3></div>
+            <p><strong>{result.validation.status}</strong></p>
+            {result.validation.messages.map((message, i) => <p key={i}>{message}</p>)}
+          </div>
+
           {/* 4. Grid: Biometrics, Database & Forensics */}
           <div className="dashboard-grid-three">
             {/* Biometric Face Verification */}
@@ -519,7 +606,7 @@ export function NewScreeningPage() {
                 <Database size={20} className="card-icon" />
                 <div>
                   <h3>Registry Database</h3>
-                  <p className="card-subtitle">Immigration Watchlist & Verification</p>
+                  <p className="card-subtitle">Simulated Demo Registry & Watchlist</p>
                 </div>
               </div>
 

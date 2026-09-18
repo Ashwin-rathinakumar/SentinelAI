@@ -84,3 +84,34 @@ def health_check() -> dict:
         "version": APP_VERSION,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@app.get("/health/readiness")
+def readiness(warmup: bool = False) -> dict:
+    """Demo readiness; model initialization is explicit rather than a liveness side effect."""
+    from sqlalchemy import text
+    from app.database import SessionLocal
+    from app.services import face_service, ocr_engine
+    from app.services.blockchain_service import network_status
+
+    database = "OK"
+    try:
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+    except Exception:
+        logger.exception("Database readiness failed")
+        database = "UNAVAILABLE"
+    if warmup:
+        try:
+            ocr_engine._load_engine()
+        except Exception:
+            logger.exception("OCR warmup failed")
+        face_service._load_face_app()
+    ocr = "OK" if ocr_engine._engine is not None else "UNAVAILABLE" if ocr_engine._engine_error else "NOT_INITIALIZED"
+    face = "OK" if face_service._using_insightface else "UNAVAILABLE" if face_service._face_app_loaded else "NOT_INITIALIZED"
+    blockchain = network_status()
+    functional = database == "OK" and ocr != "UNAVAILABLE"
+    ready = functional and ocr == face == "OK" and blockchain.get("contract_reachable", False)
+    return {"status": "READY" if ready else "DEGRADED_BUT_FUNCTIONAL" if functional else "NOT_READY",
+            "database": database, "ocr": ocr, "ocr_engine": ocr_engine.get_engine_name(),
+            "face": face, "blockchain": blockchain}

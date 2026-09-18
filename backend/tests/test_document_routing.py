@@ -105,7 +105,7 @@ def test_aadhaar_no_passport_penalties():
     assert result.risk_score == 0
     assert result.recommendation == 'SECONDARY_MANUAL_VERIFICATION'
     assert all(not c['applicable'] and c['points'] == 0 for c in result.checks)
-    assert not result.reasons
+    assert all(reason["code"] == "VERIFICATION_INCOMPLETE" and reason["points"] == 0 for reason in result.reasons)
 
 
 def test_unknown_manual_review():

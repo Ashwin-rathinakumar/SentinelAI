@@ -22,7 +22,7 @@ npx hardhat run scripts/deploy.js --network localhost
 npx hardhat run scripts/configure-local.js --network localhost
 ```
 
-Deployment prints the actual contract address, chain ID, transaction and block. Configuration creates a random writer, funds it with fake local ETH, authorizes it, and writes ignored `backend/.env.audit-local`. Neither the private key nor HMAC secret is printed. This script refuses to overwrite existing configuration. Hardhat's default accounts are development accounts only.
+Deployment prints the actual contract address, chain ID, transaction and block. Configuration creates a random writer, funds it with fake local ETH, authorizes it, and writes ignored `backend/.env.audit-local`. Neither the private key nor HMAC secret is printed. Rerunning configuration preserves existing writer/HMAC secrets and reauthorizes or funds the writer when necessary. Deployment reuses a valid live local contract. A restarted Hardhat node loses previous on-chain history; use new demo cases after restarting and configuring. Hardhat's default accounts are development accounts only.
 
 Terminal 3, starting from the repository directory:
 

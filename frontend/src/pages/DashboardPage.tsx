@@ -41,7 +41,7 @@ export function DashboardPage() {
       const casesData = await api.getCases()
       setCases(casesData.cases || [])
     } catch (err) {
-      console.error('Failed to load cases:', err)
+      setError(err instanceof Error ? err.message : 'Unable to load saved cases.')
     } finally {
       setLoadingCases(false)
     }
@@ -113,8 +113,8 @@ export function DashboardPage() {
 
             <div className="status-item">
               <span className="status-label">Biometric Verification</span>
-              <span className="status-value online">OpenCV 1:1 Biometrics</span>
-              <span className="status-meta">Facial Haar + Feature Embeddings</span>
+              <span className="status-value online">InsightFace / ArcFace</span>
+              <span className="status-meta">Availability checked during screening</span>
             </div>
           </div>
 
@@ -222,20 +222,20 @@ export function DashboardPage() {
                 {cases.map((c) => {
                   const riskLevel = c.risk?.risk_level || 'UNKNOWN'
                   const score = c.risk?.risk_score ?? 0
-                  const isHigh = riskLevel.includes('HIGH')
+                  const isHigh = riskLevel.includes('HIGH') || riskLevel === 'CRITICAL'
                   const isMedium = riskLevel.includes('MEDIUM')
                   const decision = c.officer_decision?.decision
 
                   return (
                     <tr key={c.case_id}>
                       <td>
-                        <span className="table-case-id">{c.case_id}</span>
+                        <Link className="table-case-id" to={`/screening?case=${encodeURIComponent(c.case_id)}`}>{c.case_id}</Link>
                       </td>
                       <td className="table-time">
                         {c.timestamp ? new Date(c.timestamp).toLocaleString() : '—'}
                       </td>
                       <td>
-                        <span className="doc-type-pill">{c.document_type.toUpperCase()}</span>
+                        <span className="doc-type-pill">{(c.document_type || 'unknown').toUpperCase()}</span>
                       </td>
                       <td className="table-docnum">{c.document_number}</td>
                       <td>{c.holder_name || 'Unknown'}</td>

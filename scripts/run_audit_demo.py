@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 import time
+import mimetypes
 from pathlib import Path
 import requests
 
@@ -14,13 +15,14 @@ def main():
     parser.add_argument("--document", type=Path, required=True)
     parser.add_argument("--selfie", type=Path)
     parser.add_argument("--outage", action="store_true")
+    parser.add_argument("--document-type", default="unknown")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     with args.document.open("rb") as stream:
-        files = {"file": (args.document.name, stream, "image/jpeg")}
+        files = {"file": (args.document.name, stream, mimetypes.guess_type(args.document.name)[0] or "application/octet-stream")}
         if args.selfie:
-            files["selfie"] = (args.selfie.name, args.selfie.read_bytes(), "image/jpeg")
-        response = requests.post(args.api + "/api/screen", files=files, data={"document_type": "aadhaar"}, timeout=180)
+            files["selfie"] = (args.selfie.name, args.selfie.read_bytes(), mimetypes.guess_type(args.selfie.name)[0] or "application/octet-stream")
+        response = requests.post(args.api + "/api/screen", files=files, data={"document_type": args.document_type}, timeout=180)
     response.raise_for_status()
     case = response.json()
     base = args.api + "/api/cases/" + case["case_id"] + "/audit"
@@ -34,7 +36,7 @@ def main():
     evidence = {"case_id": case["case_id"], "http_status": response.status_code,
         "document_type": case["document_type"], "name_extracted": bool(case['ocr']['fields'].get('full_name', {}).get('normalized')),
         "dob_extracted": bool(case['ocr']['fields'].get('date_of_birth', {}).get('normalized')),
-        "mrz": case['mrz']['status'], "expiry": case['expiry']['status'], "risk_score": case['risk']['risk_score'],
+        "mrz": case['mrz'].get('status'), "expiry": case['expiry'].get('status'), "risk_score": case['risk']['risk_score'],
         "recommendation": case['risk']['recommendation'], "audit": record}
     if args.outage:
         assert record and record['status'] == 'CHAIN_UNAVAILABLE', evidence
